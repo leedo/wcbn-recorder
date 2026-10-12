@@ -96,7 +96,10 @@ func startRecording(cfg *Config, job Job) (*recording, error) {
 	date := job.Event.Start.In(cfg.location)
 	base := uniqueBase(dir, sanitize(fmt.Sprintf("%s - %s", job.Event.Title, date.Format("2006-01-02"))), date.Format("1504"))
 	out := outputPaths(cfg, dir, base)
-	part := filepath.Join(dir, "."+base+".mp3.part")
+	part := out.part
+	if err := os.MkdirAll(filepath.Dir(part), 0o755); err != nil {
+		return nil, err
+	}
 
 	f, err := os.Create(part)
 	if err != nil {
@@ -153,6 +156,7 @@ func (r *recording) Run(ctx context.Context) error {
 	if r.audio.written == 0 {
 		r.stopSongWriter()
 		os.Remove(r.part)
+		os.Remove(out.trackDir) // only if empty: nothing else was written
 		return fmt.Errorf("no audio received for %q", job.Event.Title)
 	}
 	// Finalize even if we were interrupted by shutdown so partial shows keep their tags.

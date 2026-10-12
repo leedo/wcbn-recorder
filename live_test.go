@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -239,6 +240,9 @@ func TestStopRecording(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if filepath.Dir(rec.part) != rec.out.trackDir || !strings.HasPrefix(filepath.Base(rec.part), ".") {
+		t.Errorf("part file %s should be hidden in the show folder %s", rec.part, rec.out.trackDir)
+	}
 	app.mu.Lock()
 	app.active[job.Event.key()] = rec
 	app.mu.Unlock()
@@ -291,6 +295,9 @@ func TestStopRecording(t *testing.T) {
 	case <-done: // "no audio received" is expected
 	case <-time.After(5 * time.Second):
 		t.Fatal("stopped-before-start recording ran")
+	}
+	if _, err := os.Stat(rec2.out.trackDir); !os.IsNotExist(err) {
+		t.Error("a recording with no audio left an empty show folder")
 	}
 }
 

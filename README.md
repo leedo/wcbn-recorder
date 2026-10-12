@@ -101,7 +101,8 @@ instead, as `<destination>/<program>/<show> - YYYY-MM-DD.mp3`.
 
 If a recording with that name already exists, the start time is appended
 (e.g. `<show> - YYYY-MM-DD 1900`). Set `show_file` or `track_files` to `false`
-to skip either output. While recording, audio goes to a hidden `.….part` file.
+to skip either output. While recording, audio goes to a hidden `.….mp3.part`
+file in the show's folder (in the program folder when `track_files` is off).
 Each song file is written as soon as the stream moves on to the next song, so
 the folder fills up during the show, and the playlist is updated after each
 one; only the last song and the whole-show file are written when the show ends. Ctrl-C / SIGTERM stops gracefully: in-progress recordings are

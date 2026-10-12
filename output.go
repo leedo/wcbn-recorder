@@ -17,18 +17,22 @@ type outputs struct {
 	base     string // "<show> - YYYY-MM-DD", possibly with a time suffix
 	showFile string // the whole show; see outputPaths
 	trackDir string // <dir>/<base>/: one file per song plus a playlist
+	part     string // the hidden file audio is recorded into, next to showFile
 }
 
 // outputPaths lays out a recording's files in the program folder dir. With
 // song files on, the whole show is only a backup, so it goes inside the song
 // folder as a hidden file (<dir>/<base>/.<base>.mp3), where music libraries
 // such as Plex skip it. Otherwise it's the main output: <dir>/<base>.mp3.
+// The in-progress recording sits beside it, hidden, as <same name>.part.
 func outputPaths(cfg *Config, dir, base string) outputs {
 	out := outputs{base: base, trackDir: filepath.Join(dir, base)}
 	if cfg.TrackFiles {
 		out.showFile = filepath.Join(out.trackDir, "."+base+".mp3")
+		out.part = out.showFile + ".part"
 	} else {
 		out.showFile = filepath.Join(dir, base+".mp3")
+		out.part = filepath.Join(dir, "."+base+".mp3.part")
 	}
 	return out
 }

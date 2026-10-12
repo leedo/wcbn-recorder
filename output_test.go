@@ -34,6 +34,7 @@ func newFakeRecording(t *testing.T, cfg *Config) *fakeRecording {
 	cfg.Destination = dir
 	rec := &recording{cfg: cfg, job: job, part: part, file: f, audio: &frameWriter{w: f},
 		out: outputPaths(cfg, dir, "Train To Skaville - 2026-10-13")}
+	rec.out.part = part // the fake writes its part file before choosing paths
 	rec.startSongWriter(t.Context())
 	t.Cleanup(rec.stopSongWriter)
 	return &fakeRecording{recording: rec, part: part}
@@ -239,11 +240,12 @@ func waitForFiles(t *testing.T, dir string, names ...string) {
 func TestOutputPaths(t *testing.T) {
 	cfg := &Config{TrackFiles: true}
 	if out := outputPaths(cfg, "/r/Club H", "Club H - 2026-10-13"); out.showFile != "/r/Club H/Club H - 2026-10-13/.Club H - 2026-10-13.mp3" ||
-		out.trackDir != "/r/Club H/Club H - 2026-10-13" {
+		out.trackDir != "/r/Club H/Club H - 2026-10-13" || out.part != "/r/Club H/Club H - 2026-10-13/.Club H - 2026-10-13.mp3.part" {
 		t.Errorf("with song files: %+v", out)
 	}
 	cfg.TrackFiles = false
-	if out := outputPaths(cfg, "/r/Club H", "Club H - 2026-10-13"); out.showFile != "/r/Club H/Club H - 2026-10-13.mp3" {
+	if out := outputPaths(cfg, "/r/Club H", "Club H - 2026-10-13"); out.showFile != "/r/Club H/Club H - 2026-10-13.mp3" ||
+		out.part != "/r/Club H/.Club H - 2026-10-13.mp3.part" {
 		t.Errorf("without song files: %+v", out)
 	}
 }
