@@ -91,20 +91,27 @@ func (a *App) handler() http.Handler {
 	})
 	// Listen to a recording in progress, from just behind the live edge.
 	mux.HandleFunc("GET /listen/{id}", func(w http.ResponseWriter, r *http.Request) {
-		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
-		var rec *recording
-		a.mu.Lock()
-		for _, ar := range a.active {
-			if ar.id == id {
-				rec = ar
-			}
-		}
-		a.mu.Unlock()
+		rec := a.activeRecording(r.PathValue("id"))
 		if rec == nil {
 			http.Error(w, "nothing is being recorded with that id", http.StatusNotFound)
 			return
 		}
 		rec.serveListen(w, r)
+	})
+	// End a recording early; what's been recorded is saved, and the show stays
+	// selected for future airings.
+	mux.HandleFunc("POST /recordings/{id}/stop", func(w http.ResponseWriter, r *http.Request) {
+		rec := a.activeRecording(r.PathValue("id"))
+		if rec == nil {
+			http.Error(w, "nothing is being recorded with that id", http.StatusNotFound)
+			return
+		}
+		rec.Stop()
+		if wantsJSON(r) {
+			writeJSON(w, map[string]any{"stopped": true})
+			return
+		}
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 	})
 	mux.HandleFunc("POST /shows/{id}/record", func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -168,6 +175,22 @@ func (a *App) handler() http.Handler {
 
 	// Reject cross-site form posts, so other web pages can't change selections.
 	return http.NewCrossOriginProtection().Handler(mux)
+}
+
+// activeRecording finds a recording in progress by its id.
+func (a *App) activeRecording(id string) *recording {
+	n, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, rec := range a.active {
+		if rec.id == n {
+			return rec
+		}
+	}
+	return nil
 }
 
 func (a *App) pageData(ctx context.Context) (pageData, error) {

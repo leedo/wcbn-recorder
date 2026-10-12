@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -86,7 +89,7 @@ func TestWebLive(t *testing.T) {
 	app.mu.Unlock()
 
 	page := get(t, srv.URL+"/")
-	for _, want := range []string{`<section class="card live-card"`, "REC", "Now playing", "Pressure Drop", "Toots &amp; the Maytals", "Songs recorded so far (1)"} {
+	for _, want := range []string{`<section class="card live-card"`, "REC", "Now playing", "Pressure Drop", "Toots &amp; the Maytals", "Songs recorded so far (1)", `class="stop-form"`, "End recording"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page missing %q", want)
 		}
@@ -198,5 +201,88 @@ func TestWebListen(t *testing.T) {
 	rest, err := io.ReadAll(resp.Body)
 	if err != nil || !bytes.Equal(rest, f.audio[len(f.audio)-5*frameLen:]) {
 		t.Errorf("tail: %d bytes, err %v", len(rest), err)
+	}
+}
+
+func TestStopRecording(t *testing.T) {
+	// A fake station that sends a frame every 10 ms until the client hangs up.
+	station := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "audio/mpeg")
+		rc := http.NewResponseController(w)
+		for i := 0; ; i++ {
+			if _, err := w.Write(mp3Frame(byte(i))); err != nil {
+				return
+			}
+			rc.Flush()
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+	}))
+	defer station.Close()
+
+	app, srv := testApp(t)
+	cfg := testConfig()
+	cfg.Destination, cfg.StreamURL = t.TempDir(), station.URL
+	now := time.Now()
+	job := Job{Program: "Club H", Event: Event{Title: "Club H", Start: now, End: now.Add(time.Hour)}, Until: now.Add(time.Hour)}
+	rec, err := startRecording(cfg, job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.mu.Lock()
+	app.active[job.Event.key()] = rec
+	app.mu.Unlock()
+	done := make(chan error, 1)
+	go func() { done <- rec.Run(t.Context()) }()
+	for deadline := time.Now().Add(5 * time.Second); rec.bytesWritten() < 20*1044; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("no audio recorded")
+		}
+	}
+
+	post := func(path string) *http.Response {
+		req, _ := http.NewRequest("POST", srv.URL+path, nil)
+		req.Header.Set("Accept", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp
+	}
+	if resp := post("/recordings/999/stop"); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("unknown recording: %s", resp.Status)
+	}
+	if resp := post(fmt.Sprintf("/recordings/%d/stop", rec.id)); resp.StatusCode != http.StatusOK {
+		t.Fatalf("stop: %s", resp.Status)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("recording didn't stop")
+	}
+	// What was recorded is saved: the whole show, and its one (untitled) song.
+	if _, err := os.Stat(rec.out.showFile); err != nil {
+		t.Error(err)
+	}
+	waitForFiles(t, rec.out.trackDir, "01 - Club H.mp3")
+	if _, err := os.Stat(rec.part); !os.IsNotExist(err) {
+		t.Error("part file left behind")
+	}
+
+	// Ending a recording before Run has started stops it as soon as it does.
+	rec2, _ := startRecording(cfg, Job{Program: "Club H", Event: Event{Title: "Club H 2", Start: now, End: now.Add(time.Hour)}, Until: now.Add(time.Hour)})
+	rec2.Stop()
+	go func() { done <- rec2.Run(t.Context()) }()
+	select {
+	case <-done: // "no audio received" is expected
+	case <-time.After(5 * time.Second):
+		t.Fatal("stopped-before-start recording ran")
 	}
 }

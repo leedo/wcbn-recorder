@@ -50,8 +50,14 @@ While a show is recording, a live panel sits at the top of the page. It shows:
 **▶ Listen** plays the show from the recording itself: it starts about 5
 seconds behind live and follows the audio as it's recorded, so you hear exactly
 what's being saved. It doesn't open another connection to WCBN, and it works
-wherever the UI does, including over an SSH tunnel. **■ Stop** disconnects, and
-listening again picks up at the live edge.
+wherever the UI does, including over an SSH tunnel. **■ Stop listening**
+disconnects, and listening again picks up at the live edge.
+
+**End recording** stops the recording now, after asking to confirm. Everything
+recorded so far is saved as usual (whole-show file, songs and playlist), and the
+show stays selected, so its next airing is recorded normally. It isn't started
+again during the current airing, unless the recorder itself is restarted while
+the show is still on.
 
 The panel refreshes every 5 seconds while the page is visible, and right after
 you select a show. An expanded song list stays open across refreshes.

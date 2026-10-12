@@ -17,6 +17,7 @@ type liveStatus struct {
 	Bytes      int64
 	Connected  bool
 	Finishing  bool // writing output files
+	Stopped    bool // ended early from the UI
 	LastErr    string
 	Reconnects int
 	SongFiles  bool // song files are being written
@@ -43,7 +44,7 @@ func (r *recording) status(now time.Time) liveStatus {
 		ID: r.id, Key: ev.key(), Title: ev.Title, DJ: ev.DJ,
 		Start: ev.Start, End: ev.End, Until: r.job.Until, Started: r.started,
 		RecordedMs: r.audio.durationMs(), Bytes: r.audio.written,
-		Connected: r.connected, Finishing: r.finishing, LastErr: r.lastErr, Reconnects: r.reconnects,
+		Connected: r.connected, Finishing: r.finishing, Stopped: r.stopped, LastErr: r.lastErr, Reconnects: r.reconnects,
 		SongFiles: r.cfg.TrackFiles, Saved: len(r.songsSaved),
 	}
 	if st.DJ == "" {

@@ -61,6 +61,8 @@ type recording struct {
 	lastErr    string
 	reconnects int
 	finishing  bool
+	cancel     func()       // stops Run; set once Run starts
+	stopped    bool         // ended early from the UI
 	songCount  int          // songs queued for writing
 	songsSaved map[int]bool // song numbers written to files
 
@@ -114,6 +116,12 @@ func (r *recording) Run(ctx context.Context) error {
 	log.Printf("recording %q until %s -> %s", job.Event.Title, job.Until.In(r.cfg.location).Format(time.Kitchen), out.trackDir)
 	recCtx, cancel := context.WithDeadline(ctx, job.Until)
 	defer cancel()
+	r.mu.Lock()
+	r.cancel = cancel
+	if r.stopped {
+		cancel() // Stop was called before Run got going
+	}
+	r.mu.Unlock()
 	go stopAtWallTime(recCtx, job.Until, cancel)
 	r.startSongWriter(context.WithoutCancel(ctx))
 	backoff := time.Second
@@ -179,6 +187,20 @@ func stopAtWallTime(ctx context.Context, until time.Time, cancel func()) {
 				return
 			}
 		}
+	}
+}
+
+// Stop ends the recording early. What has been recorded is saved as usual.
+func (r *recording) Stop() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.stopped || r.finishing {
+		return
+	}
+	r.stopped = true
+	log.Printf("ending %q early, as requested", r.job.Event.Title)
+	if r.cancel != nil {
+		r.cancel()
 	}
 }
 

@@ -104,6 +104,7 @@
   button.listen { font-weight: 600; padding: 5px 14px; border-color: var(--rec); color: var(--rec); }
   button.listen[aria-pressed=true] { background: var(--rec); color: #fff; }
   button.listen:focus-visible { outline: 2px solid var(--rec); outline-offset: 2px; }
+  button.end-rec { padding: 5px 12px; }
   details.songs li.current .len::after { content: " ●"; color: var(--rec); }
 </style>
 </head>
@@ -250,7 +251,7 @@
     document.querySelectorAll("#live button.listen").forEach(b => {
       const on = b.dataset.src === listening;
       b.setAttribute("aria-pressed", on);
-      b.textContent = !on ? "▶ Listen" : listenState === "playing" ? "■ Stop" : "… Connecting";
+      b.textContent = !on ? "▶ Listen" : listenState === "playing" ? "■ Stop listening" : "… Connecting";
     });
   }
   function stopListening() {
@@ -274,6 +275,23 @@
   player.addEventListener("waiting", () => { listenState = "connecting"; syncListenButtons(); });
   player.addEventListener("ended", stopListening);   // the recording finished
   player.addEventListener("error", () => { if (listening) stopListening(); });
+  // End recording: confirm, then stop it; the panel shows SAVING until the
+  // files are written, then disappears.
+  document.addEventListener("submit", async e => {
+    const form = e.target.closest(".stop-form");
+    if (!form) return;
+    e.preventDefault();
+    if (!confirm(`End the recording of ${form.dataset.title} now?\n\nEverything recorded so far will be saved, and the show stays selected for future airings.`)) return;
+    form.querySelector("button").disabled = true;
+    try {
+      const res = await fetch(form.action, { method: "POST", headers: { Accept: "application/json" } });
+      if (!res.ok) throw new Error(res.statusText);
+    } catch (err) {
+      alert("Couldn't end the recording: " + err.message);
+    }
+    refreshLive();
+  });
+
   document.addEventListener("click", e => {
     const b = e.target.closest("#live button.listen");
     if (!b) return;
@@ -358,13 +376,18 @@
 {{range .Recording}}
 <section class="card live-card" data-key="{{.Key}}">
   <div class="live-head">
-    {{if .Finishing}}<span class="badge">SAVING</span>
+    {{if or .Finishing .Stopped}}<span class="badge">SAVING</span>
     {{else if .Connected}}<span class="badge rec"><span class="dot"></span>REC</span>
     {{else}}<span class="badge warn">RECONNECTING</span>{{end}}
     <h2>{{if .ShowID}}<a href="#mine-{{.ShowID}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
     {{with .DJ}}<span class="muted">with {{.}}</span>{{end}}
     <span class="slot muted">{{clock .Start}} – {{clock .End}}</span>
-    {{if not .Finishing}}<button type="button" class="listen" data-src="/listen/{{.ID}}" aria-pressed="false" aria-label="Listen to {{.Title}}">▶ Listen</button>{{end}}
+    {{if not (or .Finishing .Stopped)}}
+    <button type="button" class="listen" data-src="/listen/{{.ID}}" aria-pressed="false" aria-label="Listen to {{.Title}}">▶ Listen</button>
+    <form method="post" action="/recordings/{{.ID}}/stop" class="stop-form" data-title="{{.Title}}">
+      <button type="submit" class="end-rec">End recording</button>
+    </form>
+    {{end}}
   </div>
   <div class="progress" role="progressbar" aria-label="Show progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Progress}}"><div style="width: {{.Progress}}%"></div></div>
   <div class="stats muted">
