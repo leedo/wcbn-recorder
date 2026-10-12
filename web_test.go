@@ -176,3 +176,36 @@ func TestScheduleSortKey(t *testing.T) {
 		}
 	}
 }
+
+func TestWebArtwork(t *testing.T) {
+	app, srv := testApp(t)
+	ctx := context.Background()
+	shows, _ := app.store.Shows(ctx)
+	for _, sh := range shows {
+		img := "https://farm6.staticflickr.com/5017/5476585780_087d4791ae_m.jpg"
+		if sh.Title != "Train To Skaville" {
+			img = "javascript:alert(1)" // a hostile page; must not reach the HTML
+		}
+		app.store.UpdateDetails(ctx, sh.ID, ShowInfo{Image: img}, time.Now())
+		app.store.SetRecord(ctx, sh.ID, true)
+	}
+	app.store.SetSetting(ctx, "station_logo", "https://spinitron.com/images/Station/22/2263-img_logo.225x225.jpg")
+
+	page := get(t, srv.URL+"/?add=1")
+	want := `<img class="art art-md" src="https://farm6.staticflickr.com/5017/5476585780_087d4791ae_m.jpg" alt="" data-fallback="https://spinitron.com/images/Station/22/2263-img_logo.225x225.jpg" loading="lazy"`
+	if !strings.Contains(page, want) {
+		t.Errorf("Your shows artwork missing:\n%s", want)
+	}
+	if !strings.Contains(page, `class="art art-sm" src="https://farm6.staticflickr.com/5017/5476585780_087d4791ae_m.jpg"`) {
+		t.Error("full list artwork missing")
+	}
+	if strings.Contains(page, "javascript:") {
+		t.Error("javascript: URL reached the page")
+	}
+	if got := artImage("", "logo.jpg", "art-sm", true); got.Src != "logo.jpg" || got.Fallback != "" {
+		t.Errorf("no image should use the logo: %+v", got)
+	}
+	if got := artImage("", "", "art-sm", true); got.Src != "" {
+		t.Errorf("no image and no logo: %+v", got)
+	}
+}

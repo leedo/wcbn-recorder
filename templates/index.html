@@ -77,6 +77,16 @@
   .mine-list .sub { font-size: 13px; }
   .mine-list .when { text-align: right; font-size: 14px; font-variant-numeric: tabular-nums; }
 
+  /* Show artwork */
+  .art { display: block; flex: none; object-fit: cover; border-radius: 6px; background: var(--line); }
+  .art-lg { width: 112px; height: 112px; border-radius: 8px; }
+  .art-md { width: 44px; height: 44px; }
+  .art-sm { width: 40px; height: 40px; }
+  .live-body { display: flex; gap: 18px; align-items: flex-start; }
+  .live-main { flex: 1; min-width: 0; }
+  .title-row { display: flex; gap: 12px; align-items: flex-start; }
+  @media (max-width: 640px) { .art-lg { width: 72px; height: 72px; } }
+
   /* Live recording panel */
   .live-card { margin-top: 20px; padding: 18px 20px; border-color: var(--rec); box-shadow: 0 0 0 1px color-mix(in srgb, var(--rec) 25%, transparent); }
   .live-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
@@ -107,6 +117,23 @@
   button.end-rec { padding: 5px 12px; }
   details.songs li.current .len::after { content: " ●"; color: var(--rec); }
 </style>
+<script>
+  // Artwork comes straight from Spinitron and Flickr, and some links are dead.
+  // Swap a broken image for the station logo, then for a blank tile. This runs
+  // in <head> so it also catches images that fail before the page finishes.
+  document.addEventListener("error", e => {
+    const img = e.target;
+    if (!(img instanceof HTMLImageElement) || !img.classList.contains("art")) return;
+    const fallback = img.dataset.fallback;
+    if (fallback && img.src !== new URL(fallback, location.href).href) {
+      img.src = fallback;
+    } else {
+      const tile = document.createElement("span");
+      tile.className = img.className;
+      img.replaceWith(tile);
+    }
+  }, true);
+</script>
 </head>
 <body>
 <main>
@@ -162,9 +189,14 @@
       </form>
     </td>
     <td class="title" data-sort="{{lower .Title}}">
+      <div class="title-row">
+      {{template "art" (art .Image $.StationLogo "art-sm" true)}}
+      <div>
       {{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>{{else}}<strong>{{.Title}}</strong>{{end}}
       {{if .RecordingNow}} <span class="tag rec">● recording</span>{{end}}
       {{with .Description}}<details><summary>Description</summary><p>{{.}}</p></details>{{end}}
+      </div>
+      </div>
     </td>
     <td data-sort="{{lower .DJ}}">{{.DJ}}</td>
     <td data-sort="{{lower .Category}}">{{.Category}}</td>
@@ -375,6 +407,9 @@
 {{define "live"}}
 {{range .Recording}}
 <section class="card live-card" data-key="{{.Key}}">
+  <div class="live-body">
+  {{template "art" (art .Image $.StationLogo "art-lg" false)}}
+  <div class="live-main">
   <div class="live-head">
     {{if or .Finishing .Stopped}}<span class="badge">SAVING</span>
     {{else if .Connected}}<span class="badge rec"><span class="dot"></span>REC</span>
@@ -406,6 +441,8 @@
   {{else}}
   <div class="now-playing"><span class="meta">Waiting for song information from the stream…</span></div>
   {{end}}
+  </div>
+  </div>
   {{with .Tracks}}
   <details class="songs">
     <summary>Songs recorded so far ({{len .}})</summary>
@@ -428,6 +465,7 @@
 {{define "mine"}}
 {{if .Mine}}<ul class="list mine-list">
   {{range .Mine}}<li id="mine-{{.ID}}">
+    {{template "art" (art .Image $.StationLogo "art-md" true)}}
     <div class="show">
       {{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>{{else}}<strong>{{.Title}}</strong>{{end}}
       {{if .RecordingNow}} <span class="tag rec">● recording</span>{{end}}
@@ -441,4 +479,9 @@
     </form>
   </li>{{end}}
 </ul>{{else}}<p class="empty muted">You're not recording any shows yet. Use <strong>Add shows</strong> to pick some.</p>{{end}}
+{{end}}
+
+{{define "art"}}
+{{- if .Src}}<img class="art {{.Size}}" src="{{.Src}}" alt=""{{with .Fallback}} data-fallback="{{.}}"{{end}}{{if .Lazy}} loading="lazy"{{end}} decoding="async" referrerpolicy="no-referrer">
+{{- else}}<span class="art {{.Size}}"></span>{{end -}}
 {{end}}

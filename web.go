@@ -45,7 +45,8 @@ type pageData struct {
 	Mine        []showView // shows selected for recording, soonest first
 	Categories  []string
 	Selected    int
-	Browse      bool // show the full list (search + table) on load
+	StationLogo string // fallback artwork
+	Browse      bool   // show the full list (search + table) on load
 }
 
 func (a *App) handler() http.Handler {
@@ -54,6 +55,7 @@ func (a *App) handler() http.Handler {
 		"clock": func(t time.Time) string { return t.In(a.cfg.location).Format("3:04 PM") },
 		"ago":   ago,
 		"lower": strings.ToLower,
+		"art":   artImage,
 		"dur":   formatDuration,
 		"mb":    func(n int64) string { return fmt.Sprintf("%.1f MB", float64(n)/1e6) },
 	}).ParseFS(templateFS, "templates/*.html"))
@@ -205,6 +207,10 @@ func (a *App) pageData(ctx context.Context) (pageData, error) {
 	if err != nil {
 		return pageData{}, err
 	}
+	stationLogo, err := a.store.Setting(ctx, "station_logo")
+	if err != nil {
+		return pageData{}, err
+	}
 	now := time.Now()
 	jobs, err := a.upcoming(ctx, now)
 	if err != nil {
@@ -217,7 +223,7 @@ func (a *App) pageData(ctx context.Context) (pageData, error) {
 	for _, rec := range a.active {
 		active = append(active, rec.status(now))
 	}
-	data := pageData{LastRefresh: a.lastRefresh}
+	data := pageData{LastRefresh: a.lastRefresh, StationLogo: stationLogo}
 	if a.refreshErr != nil {
 		data.RefreshErr = a.refreshErr.Error()
 	}
@@ -284,7 +290,7 @@ func (a *App) pageData(ctx context.Context) (pageData, error) {
 	slices.SortFunc(active, func(x, y liveStatus) int { return x.Start.Compare(y.Start) })
 	for _, st := range active {
 		sh := ids[normalize(st.Title)]
-		st.ShowID = sh.ID
+		st.ShowID, st.Image = sh.ID, sh.Image
 		if st.DJ == "" {
 			st.DJ = sh.DJ
 		}
@@ -324,6 +330,24 @@ func scheduleSortKey(schedule string) int {
 		}
 	}
 	return best
+}
+
+// artView is what the "art" template needs to draw a show's artwork.
+type artView struct {
+	Src, Fallback, Size string
+	Lazy                bool
+}
+
+// artImage picks a show's artwork, falling back to the station logo; the
+// page swaps in the logo if the show's image fails to load.
+func artImage(image, stationLogo, size string, lazy bool) artView {
+	v := artView{Src: image, Size: size, Lazy: lazy}
+	if v.Src == "" {
+		v.Src = stationLogo
+	} else if stationLogo != image {
+		v.Fallback = stationLogo
+	}
+	return v
 }
 
 // formatDuration renders milliseconds as m:ss or h:mm:ss.

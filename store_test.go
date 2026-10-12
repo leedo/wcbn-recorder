@@ -135,3 +135,55 @@ func TestUpcomingJobs(t *testing.T) {
 		t.Errorf("until = %v", jobs[0].Until)
 	}
 }
+
+func TestStoreArtwork(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	s.UpsertEvents(ctx, []Event{{Title: "Club H", URL: "https://spinitron.com/WCBN/show/1/Club-H"}}, time.Now())
+	shows, _ := s.Shows(ctx)
+	info := ShowInfo{Image: "https://farm7.staticflickr.com/6154/6150710010_08df74f1ee_m.jpg"}
+	if err := s.UpdateDetails(ctx, shows[0].ID, info, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Show(ctx, shows[0].ID); got.Image != info.Image {
+		t.Errorf("image = %q", got.Image)
+	}
+	if err := s.SetSetting(ctx, "station_logo", "https://spinitron.com/logo.jpg"); err != nil {
+		t.Fatal(err)
+	}
+	s.SetSetting(ctx, "station_logo", "https://spinitron.com/logo2.jpg") // updates in place
+	if v, _ := s.Setting(ctx, "station_logo"); v != "https://spinitron.com/logo2.jpg" {
+		t.Errorf("setting = %q", v)
+	}
+	if v, err := s.Setting(ctx, "missing"); v != "" || err != nil {
+		t.Errorf("missing setting = %q, %v", v, err)
+	}
+}
+
+// Upgrading a database from before artwork refetches every show page.
+func TestMigrationRefetchesDetails(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "old.db")
+	old := migrations
+	migrations = old[:1]
+	s, err := openStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An old database: a show whose details were fetched just now.
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO shows (key, title, url, details_at) VALUES ('club h', 'Club H', ?, ?)`,
+		"https://spinitron.com/WCBN/show/1/Club-H", time.Now().Unix()); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	migrations = old
+
+	s, err = openStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if stale, _ := s.StaleDetails(ctx, time.Now().Add(-time.Hour)); len(stale) != 1 {
+		t.Errorf("after upgrade, %d shows need details; want 1", len(stale))
+	}
+}

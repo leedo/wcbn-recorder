@@ -228,6 +228,12 @@ small Flickr or Spinitron thumbnail). A few shows link Flickr images that no
 longer exist; those recordings get the WCBN station logo instead. Only JPEG and PNG images are used, and a
 recording goes ahead without art if none can be downloaded.
 
+The web UI shows the same artwork as thumbnails in the live panel, Your shows
+and the full show list, loaded by your browser straight from Spinitron and
+Flickr (the full list's images only load when you open it and scroll to them).
+The artwork URLs are stored with the other show details and refreshed daily.
+Broken images fall back to the station logo.
+
 ## Metadata
 
 The whole-show file gets an ID3v2.4 tag in front of the audio (see `id3.go`).

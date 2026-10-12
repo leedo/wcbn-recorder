@@ -181,11 +181,21 @@ func (a *App) refreshDetails(ctx context.Context, before time.Time) {
 	}
 	infos := fetchShowInfos(ctx, urls)
 	now := time.Now()
+	stationLogo := ""
 	for _, sh := range shows {
 		if info, ok := infos[sh.URL]; ok {
 			if err := a.store.UpdateDetails(ctx, sh.ID, info, now); err != nil {
 				log.Printf("saving details for %q: %v", sh.Title, err)
 			}
+			if info.StationImage != "" {
+				stationLogo = info.StationImage
+			}
+		}
+	}
+	if stationLogo != "" {
+		// The UI shows the station logo for shows without working artwork.
+		if err := a.store.SetSetting(ctx, "station_logo", stationLogo); err != nil {
+			log.Printf("saving station logo: %v", err)
 		}
 	}
 	log.Printf("updated details for %d of %d shows", len(infos), len(shows))

@@ -96,7 +96,15 @@ func TestWriteTracks(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(out.trackDir, "03 - WCBN station ID.mp3")); !os.IsNotExist(err) {
 		t.Error("the song still playing was written early")
 	}
-	if m3u, _ := os.ReadFile(filepath.Join(out.trackDir, out.base+".m3u8")); strings.Count(string(m3u), ".mp3") != 2 {
+	// The playlist is updated just after each song file is saved.
+	m3uPath := filepath.Join(out.trackDir, out.base+".m3u8")
+	var m3u []byte
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if m3u, _ = os.ReadFile(m3uPath); strings.Count(string(m3u), ".mp3") == 2 {
+			break
+		}
+	}
+	if strings.Count(string(m3u), ".mp3") != 2 {
 		t.Errorf("playlist mid-show:\n%s", m3u)
 	}
 
@@ -154,7 +162,7 @@ func TestWriteTracks(t *testing.T) {
 		}
 	}
 
-	m3u, _ := os.ReadFile(filepath.Join(out.trackDir, wantNames[4]))
+	m3u, _ = os.ReadFile(filepath.Join(out.trackDir, wantNames[4]))
 	wantM3U := "#EXTM3U\n#PLAYLIST:Train To Skaville (2026-10-13)\n" +
 		"#EXTINF:0,Toots & the Maytals - Pressure Drop\n01 - Toots & the Maytals - Pressure Drop.mp3\n" +
 		"#EXTINF:0,The Specials - A Message to You, Rudy\n02 - The Specials - A Message to You, Rudy.mp3\n" +

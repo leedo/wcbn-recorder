@@ -23,6 +23,7 @@ type Show struct {
 	URL         string
 	Schedule    string
 	Description string
+	Image       string // artwork URL from the show page's og:image
 	Record      bool
 	LastSeen    time.Time // last time the show appeared on the calendar; zero if never
 	DetailsAt   time.Time // last time the show page was fetched; zero if never
@@ -44,6 +45,10 @@ var migrations = []string{
 		details_at  INTEGER NOT NULL DEFAULT 0  -- unix seconds
 	);
 	CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
+	// Artwork URLs. Clearing details_at refetches every show page on the next
+	// refresh, so existing databases get artwork right away.
+	`ALTER TABLE shows ADD COLUMN image TEXT NOT NULL DEFAULT '';
+	UPDATE shows SET details_at = 0;`,
 }
 
 func openStore(path string) (*Store, error) {
@@ -164,10 +169,28 @@ func (s *Store) UpdateDetails(ctx context.Context, id int64, info ShowInfo, at t
 			schedule    = ?,
 			dj          = CASE WHEN ? <> '' THEN ? ELSE dj END,
 			url         = CASE WHEN ? <> '' THEN ? ELSE url END,
+			image       = ?,
 			details_at  = ?
 		WHERE id = ?`,
 		info.Description, strings.Join(info.Schedule, "; "),
-		info.DJ, info.DJ, info.URL, info.URL, at.Unix(), id)
+		info.DJ, info.DJ, info.URL, info.URL, info.Image, at.Unix(), id)
+	return err
+}
+
+// Setting and SetSetting read and write a value in the settings table.
+func (s *Store) Setting(ctx context.Context, key string) (string, error) {
+	var v string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return v, err
+}
+
+func (s *Store) SetSetting(ctx context.Context, key, value string) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO settings (key, value) VALUES (?, ?)
+		ON CONFLICT (key) DO UPDATE SET value = excluded.value`, key, value)
 	return err
 }
 
@@ -218,7 +241,7 @@ func (s *Store) Delete(ctx context.Context, id int64) error {
 
 func (s *Store) query(ctx context.Context, where string, args ...any) ([]Show, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, key, title, dj, category, url, schedule, description, record, last_seen, details_at
+		SELECT id, key, title, dj, category, url, schedule, description, image, record, last_seen, details_at
 		FROM shows `+where+` ORDER BY key`, args...)
 	if err != nil {
 		return nil, err
@@ -229,7 +252,7 @@ func (s *Store) query(ctx context.Context, where string, args ...any) ([]Show, e
 		var sh Show
 		var lastSeen, detailsAt int64
 		if err := rows.Scan(&sh.ID, &sh.Key, &sh.Title, &sh.DJ, &sh.Category, &sh.URL,
-			&sh.Schedule, &sh.Description, &sh.Record, &lastSeen, &detailsAt); err != nil {
+			&sh.Schedule, &sh.Description, &sh.Image, &sh.Record, &lastSeen, &detailsAt); err != nil {
 			return nil, err
 		}
 		if lastSeen > 0 {

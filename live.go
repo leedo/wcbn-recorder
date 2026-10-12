@@ -9,6 +9,7 @@ type liveStatus struct {
 	ShowID     int64
 	Title      string
 	DJ         string
+	Image      string    // artwork URL, from the database
 	Start, End time.Time // scheduled slot
 	Until      time.Time // recording stops, including post-roll
 	Started    time.Time // recording actually began
