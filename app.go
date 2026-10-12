@@ -26,7 +26,7 @@ type App struct {
 	lastRefresh time.Time
 	refreshErr  error
 	started     map[string]bool
-	active      map[string]Job
+	active      map[string]*recording
 
 	wake           chan struct{} // re-evaluate selections now
 	refreshNow     chan struct{} // re-fetch the schedule now
@@ -39,7 +39,7 @@ func newApp(cfg *Config, store *Store) *App {
 		cfg:        cfg,
 		store:      store,
 		started:    map[string]bool{},
-		active:     map[string]Job{},
+		active:     map[string]*recording{},
 		wake:       make(chan struct{}, 1),
 		refreshNow: make(chan struct{}, 1),
 	}
@@ -84,11 +84,16 @@ func (a *App) run(ctx context.Context) {
 				continue
 			}
 			a.started[key] = true
-			a.active[key] = job
+			rec, err := startRecording(a.cfg, job)
+			if err != nil {
+				log.Printf("recording %q failed: %v", job.Event.Title, err)
+				continue
+			}
+			a.active[key] = rec
 			a.wg.Add(1)
 			go func() {
 				defer a.wg.Done()
-				if err := Record(ctx, a.cfg, job); err != nil {
+				if err := rec.Run(ctx); err != nil {
 					log.Printf("recording %q failed: %v", job.Event.Title, err)
 				}
 				a.mu.Lock()

@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -37,20 +38,41 @@ type trackMark struct {
 }
 
 type recording struct {
-	cfg      *Config
-	job      Job
-	audio    *frameWriter
-	tracks   []trackMark
-	lastMeta string
-	dj       string
+	cfg     *Config
+	job     Job
+	out     outputs
+	part    string
+	file    *os.File
+	started time.Time
+
+	// mu guards the fields below, which the web UI reads while recording.
+	mu         sync.Mutex
+	audio      *frameWriter
+	tracks     []trackMark
+	lastMeta   string
+	dj         string
+	connected  bool
+	lastErr    string
+	reconnects int
+	finishing  bool
 }
 
 // Record streams the live program to disk until job.Until (or ctx is
 // cancelled), then writes the tagged show file and/or one file per song.
 func Record(ctx context.Context, cfg *Config, job Job) error {
+	rec, err := startRecording(cfg, job)
+	if err != nil {
+		return err
+	}
+	return rec.Run(ctx)
+}
+
+// startRecording picks the output names and creates the file the audio is
+// streamed into. Run does the recording.
+func startRecording(cfg *Config, job Job) (*recording, error) {
 	dir := filepath.Join(cfg.Destination, sanitize(job.Program))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
+		return nil, err
 	}
 	date := job.Event.Start.In(cfg.location)
 	base := uniqueBase(dir, sanitize(fmt.Sprintf("%s - %s", job.Event.Title, date.Format("2006-01-02"))), date.Format("1504"))
@@ -63,21 +85,33 @@ func Record(ctx context.Context, cfg *Config, job Job) error {
 
 	f, err := os.Create(part)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	rec := &recording{cfg: cfg, job: job, audio: &frameWriter{w: f}}
+	return &recording{cfg: cfg, job: job, out: out, part: part, file: f, started: time.Now(), audio: &frameWriter{w: f}}, nil
+}
 
-	log.Printf("recording %q until %s -> %s", job.Event.Title, job.Until.In(cfg.location).Format(time.Kitchen), filepath.Join(dir, base))
+// Run records until job.Until (or ctx is cancelled), reconnecting as needed,
+// then writes the outputs.
+func (r *recording) Run(ctx context.Context) error {
+	job, out := r.job, r.out
+	log.Printf("recording %q until %s -> %s", job.Event.Title, job.Until.In(r.cfg.location).Format(time.Kitchen), out.trackDir)
 	recCtx, cancel := context.WithDeadline(ctx, job.Until)
 	defer cancel()
 	backoff := time.Second
 	for recCtx.Err() == nil {
-		before := rec.audio.written
-		err := rec.streamOnce(recCtx)
+		before := r.bytesWritten()
+		err := r.streamOnce(recCtx)
+		r.mu.Lock()
+		r.connected = false
+		if recCtx.Err() == nil {
+			r.reconnects++
+			r.lastErr = fmt.Sprint(err)
+		}
+		r.mu.Unlock()
 		if recCtx.Err() != nil {
 			break
 		}
-		if rec.audio.written > before {
+		if r.bytesWritten() > before {
 			backoff = time.Second
 		}
 		log.Printf("stream for %q interrupted (%v); reconnecting in %s", job.Event.Title, err, backoff)
@@ -87,22 +121,40 @@ func Record(ctx context.Context, cfg *Config, job Job) error {
 		}
 		backoff = min(backoff*2, 30*time.Second)
 	}
-	if err := f.Close(); err != nil {
+	r.mu.Lock()
+	r.finishing = true
+	r.mu.Unlock()
+	if err := r.file.Close(); err != nil {
 		return err
 	}
-	if rec.audio.written == 0 {
-		os.Remove(part)
+	if r.audio.written == 0 {
+		os.Remove(r.part)
 		return fmt.Errorf("no audio received for %q", job.Event.Title)
 	}
 	// Finalize even if we were interrupted by shutdown so partial shows keep their tags.
-	if err := rec.finalize(context.WithoutCancel(ctx), part, out); err != nil {
+	if err := r.finalize(context.WithoutCancel(ctx), r.part, out); err != nil {
 		log.Printf("writing output failed (%v); keeping untagged audio as %s", err, out.showFile)
-		if err := os.Rename(part, out.showFile); err != nil {
+		if err := os.Rename(r.part, out.showFile); err != nil {
 			return err
 		}
 	}
-	log.Printf("finished %q: %s (%.1f MB, %d tracks)", job.Event.Title, filepath.Join(dir, base), float64(rec.audio.written)/1e6, len(rec.tracks))
+	log.Printf("finished %q: %s (%.1f MB, %d tracks)", job.Event.Title, out.trackDir, float64(r.audio.written)/1e6, len(r.tracks))
 	return nil
+}
+
+func (r *recording) bytesWritten() int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.audio.written
+}
+
+// Write passes stream audio to the frame writer under the lock, so the web UI
+// can read progress while recording.
+func (r *recording) Write(p []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.connected = true
+	return r.audio.Write(p)
 }
 
 // streamOnce makes one connection to the stream and copies audio until the
@@ -132,13 +184,15 @@ func (r *recording) streamOnce(ctx context.Context) error {
 	body := bufio.NewReaderSize(&kickReader{resp.Body, watchdog}, 64*1024)
 
 	// A new connection can start mid-frame, and a dropped one can end mid-frame.
+	r.mu.Lock()
 	r.audio.Reset()
+	r.mu.Unlock()
 	if metaint <= 0 {
-		_, err := io.Copy(r.audio, body)
+		_, err := io.Copy(r, body)
 		return err
 	}
 	for {
-		if _, err := io.CopyN(r.audio, body, int64(metaint)); err != nil {
+		if _, err := io.CopyN(r, body, int64(metaint)); err != nil {
 			return err
 		}
 		lenByte, err := body.ReadByte()
@@ -172,6 +226,8 @@ func (k *kickReader) Read(p []byte) (int, error) {
 var streamTitleRe = regexp.MustCompile(`StreamTitle='(.*?)';`)
 
 func (r *recording) onMetadata(meta string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	m := streamTitleRe.FindStringSubmatch(strings.TrimRight(meta, "\x00"))
 	if m == nil || m[1] == "" || m[1] == r.lastMeta {
 		return

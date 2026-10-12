@@ -39,7 +39,7 @@ type showView struct {
 type pageData struct {
 	LastRefresh time.Time
 	RefreshErr  string
-	Recording   []jobView
+	Recording   []liveStatus
 	Upcoming    []jobView
 	Shows       []showView
 	Categories  []string
@@ -52,6 +52,8 @@ func (a *App) handler() http.Handler {
 		"clock": func(t time.Time) string { return t.In(a.cfg.location).Format("3:04 PM") },
 		"ago":   ago,
 		"lower": strings.ToLower,
+		"dur":   formatDuration,
+		"mb":    func(n int64) string { return fmt.Sprintf("%.1f MB", float64(n)/1e6) },
 	}).ParseFS(templateFS, "templates/*.html"))
 
 	mux := http.NewServeMux()
@@ -62,6 +64,25 @@ func (a *App) handler() http.Handler {
 			return
 		}
 		render(w, tmpl, "index.html", data)
+	})
+	// The page polls this to keep the live recording panel current.
+	mux.HandleFunc("GET /live", func(w http.ResponseWriter, r *http.Request) {
+		data, err := a.pageData(r.Context())
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		var live, upcoming bytes.Buffer
+		if err := tmpl.ExecuteTemplate(&live, "live", data); err != nil {
+			httpError(w, err)
+			return
+		}
+		if err := tmpl.ExecuteTemplate(&upcoming, "upcoming", data); err != nil {
+			httpError(w, err)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, map[string]any{"live": live.String(), "upcoming": upcoming.String(), "recording": len(data.Recording)})
 	})
 	mux.HandleFunc("POST /shows/{id}/record", func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -128,9 +149,9 @@ func (a *App) pageData(ctx context.Context) (pageData, error) {
 
 	a.mu.Lock()
 	events := a.events
-	active := make([]Job, 0, len(a.active))
-	for _, j := range a.active {
-		active = append(active, j)
+	active := make([]liveStatus, 0, len(a.active))
+	for _, rec := range a.active {
+		active = append(active, rec.status(now))
 	}
 	data := pageData{LastRefresh: a.lastRefresh}
 	if a.refreshErr != nil {
@@ -147,8 +168,8 @@ func (a *App) pageData(ctx context.Context) (pageData, error) {
 		}
 	}
 	recordingNow := map[string]bool{}
-	for _, j := range active {
-		recordingNow[normalize(j.Event.Title)] = true
+	for _, st := range active {
+		recordingNow[normalize(st.Title)] = true
 	}
 	ids := map[string]Show{}
 	categories := map[string]bool{}
@@ -179,9 +200,14 @@ func (a *App) pageData(ctx context.Context) (pageData, error) {
 		}
 		return jobView{ShowID: sh.ID, Title: j.Event.Title, DJ: dj, Start: j.Event.Start, End: j.Event.End}
 	}
-	slices.SortFunc(active, func(x, y Job) int { return x.Event.Start.Compare(y.Event.Start) })
-	for _, j := range active {
-		data.Recording = append(data.Recording, view(j))
+	slices.SortFunc(active, func(x, y liveStatus) int { return x.Start.Compare(y.Start) })
+	for _, st := range active {
+		sh := ids[normalize(st.Title)]
+		st.ShowID = sh.ID
+		if st.DJ == "" {
+			st.DJ = sh.DJ
+		}
+		data.Recording = append(data.Recording, st)
 	}
 	for _, j := range jobs {
 		if !recordingNow[normalize(j.Event.Title)] && len(data.Upcoming) < 15 {
@@ -217,6 +243,15 @@ func scheduleSortKey(schedule string) int {
 		}
 	}
 	return best
+}
+
+// formatDuration renders milliseconds as m:ss or h:mm:ss.
+func formatDuration(ms int64) string {
+	sec := max(ms, 0) / 1000
+	if sec >= 3600 {
+		return fmt.Sprintf("%d:%02d:%02d", sec/3600, sec/60%60, sec%60)
+	}
+	return fmt.Sprintf("%d:%02d", sec/60, sec%60)
 }
 
 func ago(t time.Time) string {

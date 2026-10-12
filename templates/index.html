@@ -63,6 +63,31 @@
   button.toggle[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #fff; }
   button.link { border: 0; background: none; padding: 0; color: var(--muted); text-decoration: underline; font-size: 12px; }
   form { display: inline; margin: 0; }
+
+  /* Live recording panel */
+  .live-card { margin-top: 20px; padding: 18px 20px; border-color: var(--rec); box-shadow: 0 0 0 1px color-mix(in srgb, var(--rec) 25%, transparent); }
+  .live-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .live-head h2 { margin: 0; font-size: 19px; }
+  .live-head .slot { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .badge { font-size: 11px; font-weight: 700; letter-spacing: .06em; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; align-self: center; }
+  .badge.rec { color: var(--rec); }
+  .badge.warn { color: #c98a00; }
+  .badge .dot { width: 7px; height: 7px; margin-right: 5px; vertical-align: 1px; }
+  .progress { height: 4px; border-radius: 2px; background: var(--line); margin: 14px 0 8px; overflow: hidden; }
+  .progress div { height: 100%; background: var(--rec); transition: width .5s; }
+  .stats { font-size: 13px; font-variant-numeric: tabular-nums; }
+  .now-playing { margin-top: 16px; display: grid; gap: 2px; }
+  .now-playing .label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .now-playing .song { font-size: 22px; font-weight: 650; line-height: 1.25; }
+  .now-playing .artist { font-size: 16px; }
+  .now-playing .meta { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  details.songs { margin-top: 14px; font-size: 14px; }
+  details.songs summary { cursor: pointer; color: var(--muted); }
+  details.songs ol { list-style: none; margin: 8px 0 0; padding: 0; border-top: 1px solid var(--line); }
+  details.songs li { display: grid; grid-template-columns: 2.5em 5.5em 1fr auto; gap: 10px; padding: 6px 2px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  details.songs li .n, details.songs li .at, details.songs li .len { color: var(--muted); }
+  details.songs li.current { font-weight: 600; }
+  details.songs li.current .len::after { content: " ●"; color: var(--rec); }
 </style>
 </head>
 <body>
@@ -76,12 +101,7 @@
 </header>
 {{with .RefreshErr}}<div class="error"><strong>Couldn't load the schedule:</strong> {{.}}</div>{{end}}
 
-{{with .Recording}}
-<h2>Recording now</h2>
-<div class="card"><ul class="list">
-  {{range .}}<li><span class="time"><span class="dot"></span>until {{clock .End}}</span><span><strong>{{.Title}}</strong>{{with .DJ}} <span class="muted">with {{.}}</span>{{end}}</span></li>{{end}}
-</ul></div>
-{{end}}
+<div id="live" aria-live="polite">{{template "live" .}}</div>
 
 <h2>Upcoming recordings</h2>
 <div class="card" id="upcoming">{{template "upcoming" .}}</div>
@@ -164,6 +184,25 @@
     });
   });
 
+  // Keep the live recording panel current, preserving which song lists are open.
+  const live = document.getElementById("live");
+  async function refreshLive() {
+    if (document.hidden) return;
+    try {
+      const res = await fetch("/live", { headers: { Accept: "application/json" } });
+      if (!res.ok) return;
+      const data = await res.json();
+      const open = new Set([...live.querySelectorAll("details[open]")].map(d => d.closest("[data-key]").dataset.key));
+      live.innerHTML = data.live;
+      live.querySelectorAll("[data-key]").forEach(card => {
+        if (open.has(card.dataset.key)) card.querySelector("details")?.setAttribute("open", "");
+      });
+      document.getElementById("upcoming").innerHTML = data.upcoming;
+    } catch { /* server restarting; try again next tick */ }
+  }
+  setInterval(refreshLive, 5000);
+  document.addEventListener("visibilitychange", refreshLive);
+
   // Client-side filtering.
   const q = document.getElementById("q"), cat = document.getElementById("category"), only = document.getElementById("only-selected");
   function filter() {
@@ -218,6 +257,46 @@
 </script>
 </body>
 </html>
+
+{{define "live"}}
+{{range .Recording}}
+<section class="card live-card" data-key="{{.Key}}">
+  <div class="live-head">
+    {{if .Finishing}}<span class="badge">SAVING</span>
+    {{else if .Connected}}<span class="badge rec"><span class="dot"></span>REC</span>
+    {{else}}<span class="badge warn">RECONNECTING</span>{{end}}
+    <h2>{{if .ShowID}}<a href="#show-{{.ShowID}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
+    {{with .DJ}}<span class="muted">with {{.}}</span>{{end}}
+    <span class="slot muted">{{clock .Start}} – {{clock .End}}</span>
+  </div>
+  <div class="progress" role="progressbar" aria-label="Show progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Progress}}"><div style="width: {{.Progress}}%"></div></div>
+  <div class="stats muted">
+    Recorded {{dur .RecordedMs}} · {{mb .Bytes}} · stops at {{clock .Until}}
+    {{with .Reconnects}} · {{.}} reconnect{{if gt . 1}}s{{end}}{{end}}
+    {{if and (not .Connected) (not .Finishing) .LastErr}}<br>Last error: {{.LastErr}}{{end}}
+  </div>
+  {{with .Current}}
+  <div class="now-playing">
+    <span class="label">Now playing</span>
+    <span class="song">{{.Title}}</span>
+    {{with .Artist}}<span class="artist">{{.}}</span>{{end}}
+    <span class="meta">Started {{clock .At}} · {{dur .DurationMs}} so far</span>
+  </div>
+  {{else}}
+  <div class="now-playing"><span class="meta">Waiting for song information from the stream…</span></div>
+  {{end}}
+  {{with .Tracks}}
+  <details class="songs">
+    <summary>Songs recorded so far ({{len .}})</summary>
+    <ol>
+      {{range .}}<li class="{{if .Current}}current{{end}}"><span class="n">{{.N}}.</span><span class="at">{{clock .At}}</span><span>{{.Title}}{{with .Artist}} <span class="muted">— {{.}}</span>{{end}}</span><span class="len">{{dur .DurationMs}}</span></li>
+      {{end}}
+    </ol>
+  </details>
+  {{end}}
+</section>
+{{end}}
+{{end}}
 
 {{define "upcoming"}}
 {{if .Upcoming}}<ul class="list">

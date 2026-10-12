@@ -27,8 +27,21 @@ Click a column header to sort by it, and click again to reverse. "Schedule"
 sorts by weekly time slot, Monday first; "Next airing" sorts by date; "Record"
 puts selected shows first. The sort is remembered, and links can set it with
 `?sort=<column number>&dir=asc|desc` (columns count from 0). Above
-the list are the recordings in progress and the selected shows coming up in the
-next week. Selecting a show that is on the air starts recording right away.
+the list are the selected shows coming up in the next week.
+
+While a show is recording, a live panel sits at the top of the page. It shows:
+
+- **status:** REC, RECONNECTING (with the last error), or SAVING while the files
+  are written
+- **progress:** how far through the time slot the show is, how much has been
+  recorded, and when recording stops
+- **now playing:** the current song's title and artist, when it started, and how
+  long it has played
+- **songs recorded so far:** an expandable list in air order, numbered the same
+  way as the song files
+
+The panel refreshes every 5 seconds while the page is visible, and an expanded
+song list stays open across refreshes. Selecting a show that is on the air starts recording right away.
 Unselecting a show that is being recorded lets that recording finish.
 
 Show details come from Spinitron. The calendar is re-read every
@@ -72,8 +85,21 @@ Click a column header to sort by it, and click again to reverse. "Schedule"
 sorts by weekly time slot, Monday first; "Next airing" sorts by date; "Record"
 puts selected shows first. The sort is remembered, and links can set it with
 `?sort=<column number>&dir=asc|desc` (columns count from 0). Above
-the list are the recordings in progress and the selected shows coming up in the
-next week. Selecting a show that is on the air starts recording right away.
+the list are the selected shows coming up in the next week.
+
+While a show is recording, a live panel sits at the top of the page. It shows:
+
+- **status:** REC, RECONNECTING (with the last error), or SAVING while the files
+  are written
+- **progress:** how far through the time slot the show is, how much has been
+  recorded, and when recording stops
+- **now playing:** the current song's title and artist, when it started, and how
+  long it has played
+- **songs recorded so far:** an expandable list in air order, numbered the same
+  way as the song files
+
+The panel refreshes every 5 seconds while the page is visible, and an expanded
+song list stays open across refreshes. Selecting a show that is on the air starts recording right away.
 Unselecting a show that is being recorded lets that recording finish.
 
 Show details come from Spinitron. The calendar is re-read every
