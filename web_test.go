@@ -52,8 +52,13 @@ func get(t *testing.T, u string) string {
 func TestWebToggle(t *testing.T) {
 	app, srv := testApp(t)
 	page := get(t, srv.URL+"/")
-	if !strings.Contains(page, "Train To Skaville") || !strings.Contains(page, "Nothing selected airs") {
+	if !strings.Contains(page, "Train To Skaville") || !strings.Contains(page, "None of your shows air") ||
+		!strings.Contains(page, "not recording any shows yet") {
 		t.Fatalf("unexpected page:\n%s", page)
+	}
+	// With nothing selected, the full list opens on its own.
+	if !strings.Contains(page, `<section id="browse" >`) || !strings.Contains(page, `aria-expanded="true"`) {
+		t.Error("full list should be open when nothing is selected")
 	}
 	if strings.Contains(page, "<script>alert(1)</script>") {
 		t.Error("show title was not escaped")
@@ -79,28 +84,47 @@ func TestWebToggle(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out struct {
+		ID       int64
 		Record   bool
 		Selected int
 		Upcoming string
+		Mine     string
 	}
 	json.NewDecoder(resp.Body).Decode(&out)
 	resp.Body.Close()
-	if resp.StatusCode != 200 || !out.Record || out.Selected != 1 || !strings.Contains(out.Upcoming, "Train To Skaville") {
+	if resp.StatusCode != 200 || !out.Record || out.Selected != 1 || strconv.FormatInt(out.ID, 10) != id ||
+		!strings.Contains(out.Upcoming, "Train To Skaville") || !strings.Contains(out.Mine, `id="mine-`+id+`"`) {
 		t.Fatalf("toggle: %s %+v", resp.Status, out)
+	}
+
+	// With a show selected, the main page lists it and hides the full list
+	// until "Add shows" (?add=1) is used.
+	page = get(t, srv.URL+"/")
+	if !strings.Contains(page, `<li id="mine-`+id+`">`) || !strings.Contains(page, `<section id="browse" hidden>`) ||
+		!strings.Contains(page, `href="/?add=1"`) {
+		t.Error("main page should list the selection and hide the full list")
+	}
+	if page := get(t, srv.URL+"/?add=1"); !strings.Contains(page, `<section id="browse" >`) || !strings.Contains(page, ">Done<") {
+		t.Error("?add=1 should open the full list")
 	}
 	if sel, _ := app.store.Selected(context.Background()); len(sel) != 1 {
 		t.Errorf("selected = %d", len(sel))
 	}
 
-	// No-JS path: a plain form post redirects back to the row.
+	// No-JS path: a plain form post redirects back to where it came from.
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	resp, err = client.PostForm(srv.URL+"/shows/"+id+"/record", url.Values{"record": {"0"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/#show-"+id {
-		t.Errorf("form post: %s %s", resp.Status, resp.Header.Get("Location"))
+	for _, tc := range []struct{ from, record, want string }{
+		{"add", "1", "/?add=1#show-" + id},
+		{"mine", "0", "/#your-shows"},
+	} {
+		resp, err = client.PostForm(srv.URL+"/shows/"+id+"/record", url.Values{"record": {tc.record}, "from": {tc.from}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != tc.want {
+			t.Errorf("form post from %s: %s %s", tc.from, resp.Status, resp.Header.Get("Location"))
+		}
 	}
 	if sel, _ := app.store.Selected(context.Background()); len(sel) != 0 {
 		t.Errorf("selected after unselect = %d", len(sel))

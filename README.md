@@ -20,14 +20,21 @@ cp config.example.json config.json   # set destination
 
 ## Web UI
 
-The UI lists every show on the calendar with its DJ, category, weekly
-schedule, next airing, and description. Click **Record** to select a show, and
-use search, the category filter and "Selected only" to narrow the list.
-Click a column header to sort by it, and click again to reverse. "Schedule"
+The main page shows what you're recording: the live panel (while a show is on
+the air), the selected shows coming up in the next week, and **Your shows**, the
+list of selected shows with their next airing and a **Remove** button.
+
+**Add shows** opens the full list of every show on the calendar, with its DJ,
+category, weekly schedule, next airing and description. Search it, filter it by
+category, and click **Record** to select a show; **Done** closes it. The list
+opens on its own when nothing is selected yet, and `/?add=1` links straight to
+it. Click a column header to sort by it, and click again to reverse. "Schedule"
 sorts by weekly time slot, Monday first; "Next airing" sorts by date; "Record"
 puts selected shows first. The sort is remembered, and links can set it with
-`?sort=<column number>&dir=asc|desc` (columns count from 0). Above
-the list are the selected shows coming up in the next week.
+`?sort=<column number>&dir=asc|desc` (columns count from 0).
+
+Selecting a show that is on the air starts recording right away. Removing a show
+that is being recorded lets that recording finish.
 
 While a show is recording, a live panel sits at the top of the page. It shows:
 
@@ -40,15 +47,15 @@ While a show is recording, a live panel sits at the top of the page. It shows:
 - **songs recorded so far:** an expandable list in air order, numbered the same
   way as the song files
 
-The panel refreshes every 5 seconds while the page is visible, and an expanded
-song list stays open across refreshes. Selecting a show that is on the air starts recording right away.
-Unselecting a show that is being recorded lets that recording finish.
+The panel refreshes every 5 seconds while the page is visible, and right after
+you select a show. An expanded song list stays open across refreshes.
 
 Show details come from Spinitron. The calendar is re-read every
 `poll_interval`, and each show's page is refetched once a day. **Refresh now**
 re-reads both immediately. A selected show that drops off the calendar, for
-example between semesters, stays in the list and is recorded again when it
-returns. Unselected shows that are no longer on the calendar can be removed.
+example between semesters, stays in Your shows and is recorded again when it
+returns. Unselected shows that are no longer on the calendar can be removed
+from the full list.
 
 The UI has no login, so by default it only listens on `127.0.0.1`. To reach it
 from another machine, use an SSH tunnel (`ssh -L 8080:127.0.0.1:8080 server`)
@@ -56,6 +63,8 @@ or put it behind a reverse proxy that adds authentication. Avoid simply setting
 `listen` to `0.0.0.0:8080`: anyone who can reach the port could change your
 selections. Requests from other websites are rejected, so a page open in your
 browser can't change them.
+
+## Output
 
 Each recording produces:
 
@@ -76,49 +85,9 @@ and the song folder is assembled under a hidden name and renamed into place
 when complete. Ctrl-C / SIGTERM stops gracefully: in-progress recordings are
 tagged and kept.
 
-## Web UI
-
-The UI lists every show on the calendar with its DJ, category, weekly
-schedule, next airing, and description. Click **Record** to select a show, and
-use search, the category filter and "Selected only" to narrow the list.
-Click a column header to sort by it, and click again to reverse. "Schedule"
-sorts by weekly time slot, Monday first; "Next airing" sorts by date; "Record"
-puts selected shows first. The sort is remembered, and links can set it with
-`?sort=<column number>&dir=asc|desc` (columns count from 0). Above
-the list are the selected shows coming up in the next week.
-
-While a show is recording, a live panel sits at the top of the page. It shows:
-
-- **status:** REC, RECONNECTING (with the last error), or SAVING while the files
-  are written
-- **progress:** how far through the time slot the show is, how much has been
-  recorded, and when recording stops
-- **now playing:** the current song's title and artist, when it started, and how
-  long it has played
-- **songs recorded so far:** an expandable list in air order, numbered the same
-  way as the song files
-
-The panel refreshes every 5 seconds while the page is visible, and an expanded
-song list stays open across refreshes. Selecting a show that is on the air starts recording right away.
-Unselecting a show that is being recorded lets that recording finish.
-
-Show details come from Spinitron. The calendar is re-read every
-`poll_interval`, and each show's page is refetched once a day. **Refresh now**
-re-reads both immediately. A selected show that drops off the calendar, for
-example between semesters, stays in the list and is recorded again when it
-returns. Unselected shows that are no longer on the calendar can be removed.
-
-The UI has no login, so by default it only listens on `127.0.0.1`. To reach it
-from another machine, use an SSH tunnel (`ssh -L 8080:127.0.0.1:8080 server`)
-or put it behind a reverse proxy that adds authentication. Avoid simply setting
-`listen` to `0.0.0.0:8080`: anyone who can reach the port could change your
-selections. Requests from other websites are rejected, so a page open in your
-browser can't change them.
-
-Recordings are written to `<destination>/<program>/<show> - YYYY-MM-DD.mp3`.
-If that file already exists, the start time is appended. While recording, audio goes to a hidden
-`.….part` file in the same folder. Ctrl-C / SIGTERM stops gracefully:
-in-progress recordings are tagged and kept.
+The machine has to stay awake: nothing is recorded while it sleeps, and the
+recorder reconnects when it wakes. On a laptop, keep it plugged in with sleep
+disabled, or run it on an always-on machine (see systemd below).
 
 ## Running with systemd (Linux)
 

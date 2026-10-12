@@ -41,9 +41,11 @@ type pageData struct {
 	RefreshErr  string
 	Recording   []liveStatus
 	Upcoming    []jobView
-	Shows       []showView
+	Shows       []showView // every known show, for the "Add shows" list
+	Mine        []showView // shows selected for recording, soonest first
 	Categories  []string
 	Selected    int
+	Browse      bool // show the full list (search + table) on load
 }
 
 func (a *App) handler() http.Handler {
@@ -63,6 +65,9 @@ func (a *App) handler() http.Handler {
 			httpError(w, err)
 			return
 		}
+		// The full list opens via the "Add shows" button (?add=1), and on its own
+		// when nothing is selected yet, since there's nothing else to show.
+		data.Browse = r.URL.Query().Get("add") == "1" || data.Selected == 0
 		render(w, tmpl, "index.html", data)
 	})
 	// The page polls this to keep the live recording panel current.
@@ -97,21 +102,33 @@ func (a *App) handler() http.Handler {
 		}
 		poke(a.wake) // start right away if the show is on now
 		if !wantsJSON(r) {
-			http.Redirect(w, r, fmt.Sprintf("/#show-%d", id), http.StatusSeeOther)
+			// Without JS, go back to where the button was pressed.
+			target := "/#your-shows"
+			if r.FormValue("from") == "add" {
+				target = fmt.Sprintf("/?add=1#show-%d", id)
+			}
+			http.Redirect(w, r, target, http.StatusSeeOther)
 			return
 		}
-		// Send back the re-rendered upcoming list so the page can update in place.
+		// Send back the re-rendered lists so the page can update in place.
 		data, err := a.pageData(r.Context())
 		if err != nil {
 			httpError(w, err)
 			return
 		}
-		var upcoming bytes.Buffer
+		var upcoming, mine bytes.Buffer
 		if err := tmpl.ExecuteTemplate(&upcoming, "upcoming", data); err != nil {
 			httpError(w, err)
 			return
 		}
-		writeJSON(w, map[string]any{"record": record, "selected": data.Selected, "upcoming": upcoming.String()})
+		if err := tmpl.ExecuteTemplate(&mine, "mine", data); err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{
+			"id": id, "record": record, "selected": data.Selected,
+			"upcoming": upcoming.String(), "mine": mine.String(),
+		})
 	})
 	mux.HandleFunc("POST /shows/{id}/delete", func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -123,7 +140,7 @@ func (a *App) handler() http.Handler {
 			httpError(w, err)
 			return
 		}
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		http.Redirect(w, r, "/?add=1", http.StatusSeeOther)
 	})
 	mux.HandleFunc("POST /refresh", func(w http.ResponseWriter, r *http.Request) {
 		poke(a.refreshNow)
@@ -182,11 +199,28 @@ func (a *App) pageData(ctx context.Context) (pageData, error) {
 			data.Selected++
 		}
 		_, onCal := next[sh.Key]
-		data.Shows = append(data.Shows, showView{
+		v := showView{
 			Show: sh, NextAiring: next[sh.Key], OnCalendar: onCal,
 			RecordingNow: recordingNow[sh.Key], ScheduleKey: scheduleSortKey(sh.Schedule),
-		})
+		}
+		data.Shows = append(data.Shows, v)
+		if sh.Record {
+			data.Mine = append(data.Mine, v)
+		}
 	}
+	// Your shows: on air or airing soonest first, then shows off the calendar.
+	slices.SortStableFunc(data.Mine, func(x, y showView) int {
+		switch {
+		case x.OnCalendar != y.OnCalendar:
+			if x.OnCalendar {
+				return -1
+			}
+			return 1
+		case x.OnCalendar:
+			return x.NextAiring.Compare(y.NextAiring)
+		}
+		return 0 // already sorted by title
+	})
 	for c := range categories {
 		data.Categories = append(data.Categories, c)
 	}
