@@ -1,0 +1,52 @@
+[Unit]
+Description=WCBN radio show recorder
+Documentation=https://spinitron.com/WCBN/calendar
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=wcbn-recorder
+Group=wcbn-recorder
+ExecStart=/usr/local/bin/wcbn-recorder -config /etc/wcbn-recorder/config.json
+WorkingDirectory=/var/lib/wcbn-recorder
+Restart=on-failure
+RestartSec=30s
+
+# On stop, in-progress recordings are closed and tagged with ffmpeg before the
+# program exits, so allow time for that rather than killing it mid-write.
+KillMode=mixed
+TimeoutStopSec=2min
+
+# Hardening. Recordings can only be written under ReadWritePaths, so it must
+# include the "destination" from config.json.
+ReadWritePaths=/var/lib/wcbn-recorder
+StateDirectory=wcbn-recorder
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+UMask=0022
+
+[Install]
+WantedBy=multi-user.target

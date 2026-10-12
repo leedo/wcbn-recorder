@@ -1,0 +1,16 @@
+{
+  "destination": "/Users/you/Music/WCBN",
+  "programs": [
+    "Yazoo City Calling",
+    "VARIETY IS DEAD",
+    "Overnight Service"
+  ],
+  "match_substring": false,
+  "stream_url": "https://floyd.wcbn.org:8443/wcbn-hd.mp3",
+  "schedule_url": "https://spinitron.com/WCBN/calendar",
+  "poll_interval": "15m",
+  "pre_roll": "1m",
+  "post_roll": "2m",
+  "timezone": "America/Detroit",
+  "ffmpeg_path": "ffmpeg"
+}
