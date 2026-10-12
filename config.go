@@ -43,8 +43,7 @@ type Config struct {
 	PreRoll  Duration `json:"pre_roll"`
 	PostRoll Duration `json:"post_roll"`
 
-	Timezone   string `json:"timezone"`
-	FFmpegPath string `json:"ffmpeg_path"`
+	Timezone string `json:"timezone"`
 
 	location *time.Location
 }
@@ -61,7 +60,6 @@ func loadConfig(path string) (*Config, error) {
 		PreRoll:      Duration{1 * time.Minute},
 		PostRoll:     Duration{2 * time.Minute},
 		Timezone:     "America/Detroit",
-		FFmpegPath:   "ffmpeg",
 	}
 	if err := json.Unmarshal(b, cfg); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)

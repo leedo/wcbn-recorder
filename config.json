@@ -10,6 +10,5 @@
   "poll_interval": "15m",
   "pre_roll": "1m",
   "post_roll": "2m",
-  "timezone": "America/Detroit",
-  "ffmpeg_path": "ffmpeg"
+  "timezone": "America/Detroit"
 }

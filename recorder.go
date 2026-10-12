@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -29,25 +28,23 @@ type Job struct {
 	Until   time.Time // stop time, including post-roll
 }
 
-// trackMark records a stream title change at a byte offset in the audio file.
+// trackMark records a stream title change at a position in the audio.
 type trackMark struct {
-	offset int64
-	title  string
+	ms    int64
+	title string
 }
 
 type recording struct {
 	cfg      *Config
 	job      Job
-	out      *os.File
-	written  int64
-	bitrate  int // kbps, from icy-br
+	audio    *frameWriter
 	tracks   []trackMark
 	lastMeta string
 	dj       string
 }
 
 // Record streams the live program to disk until job.Until (or ctx is
-// cancelled), then writes the show metadata with ffmpeg.
+// cancelled), then prepends an ID3 tag with the show metadata.
 func Record(ctx context.Context, cfg *Config, job Job) error {
 	dir := filepath.Join(cfg.Destination, sanitize(job.Program))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -62,19 +59,19 @@ func Record(ctx context.Context, cfg *Config, job Job) error {
 	if err != nil {
 		return err
 	}
-	rec := &recording{cfg: cfg, job: job, out: f}
+	rec := &recording{cfg: cfg, job: job, audio: &frameWriter{w: f}}
 
 	log.Printf("recording %q until %s -> %s", job.Event.Title, job.Until.In(cfg.location).Format(time.Kitchen), final)
 	recCtx, cancel := context.WithDeadline(ctx, job.Until)
 	defer cancel()
 	backoff := time.Second
 	for recCtx.Err() == nil {
-		before := rec.written
+		before := rec.audio.written
 		err := rec.streamOnce(recCtx)
 		if recCtx.Err() != nil {
 			break
 		}
-		if rec.written > before {
+		if rec.audio.written > before {
 			backoff = time.Second
 		}
 		log.Printf("stream for %q interrupted (%v); reconnecting in %s", job.Event.Title, err, backoff)
@@ -87,18 +84,19 @@ func Record(ctx context.Context, cfg *Config, job Job) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	if rec.written == 0 {
+	if rec.audio.written == 0 {
 		os.Remove(part)
 		return fmt.Errorf("no audio received for %q", job.Event.Title)
 	}
 	// Finalize even if we were interrupted by shutdown so partial shows keep their tags.
 	if err := rec.finalize(context.WithoutCancel(ctx), part, final); err != nil {
+		os.Remove(final + ".tmp")
 		log.Printf("writing metadata failed (%v); keeping untagged audio", err)
 		if err := os.Rename(part, final); err != nil {
 			return err
 		}
 	}
-	log.Printf("finished %q: %s (%.1f MB)", job.Event.Title, final, float64(rec.written)/1e6)
+	log.Printf("finished %q: %s (%.1f MB)", job.Event.Title, final, float64(rec.audio.written)/1e6)
 	return nil
 }
 
@@ -121,9 +119,6 @@ func (r *recording) streamOnce(ctx context.Context) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("stream returned %s", resp.Status)
 	}
-	if br, err := strconv.Atoi(resp.Header.Get("icy-br")); err == nil && br > 0 {
-		r.bitrate = br
-	}
 	metaint, _ := strconv.Atoi(resp.Header.Get("icy-metaint"))
 
 	// Cancel the connection if the server stops sending data.
@@ -131,15 +126,14 @@ func (r *recording) streamOnce(ctx context.Context) error {
 	defer watchdog.Stop()
 	body := bufio.NewReaderSize(&kickReader{resp.Body, watchdog}, 64*1024)
 
+	// A new connection can start mid-frame, and a dropped one can end mid-frame.
+	r.audio.Reset()
 	if metaint <= 0 {
-		n, err := io.Copy(r.out, body)
-		r.written += n
+		_, err := io.Copy(r.audio, body)
 		return err
 	}
 	for {
-		n, err := io.CopyN(r.out, body, int64(metaint))
-		r.written += n
-		if err != nil {
+		if _, err := io.CopyN(r.audio, body, int64(metaint)); err != nil {
 			return err
 		}
 		lenByte, err := body.ReadByte()
@@ -184,11 +178,11 @@ func (r *recording) onMetadata(meta string) {
 	if ours && dj != "" {
 		r.dj = dj
 	}
-	offset := r.written
+	ms := r.audio.durationMs()
 	if len(r.tracks) == 0 {
-		offset = 0 // the first title covers the audio from the start of the file
+		ms = 0 // the first title covers the audio from the start of the file
 	}
-	r.tracks = append(r.tracks, trackMark{offset: offset, title: track})
+	r.tracks = append(r.tracks, trackMark{ms: ms, title: track})
 	log.Printf("[%s] now playing: %s", r.job.Event.Title, track)
 }
 
@@ -210,15 +204,6 @@ func splitStreamTitle(title, show string) (track, dj string, ours bool) {
 		return strings.TrimSpace(m[1]), strings.TrimSpace(m[3]), false
 	}
 	return title, "", false
-}
-
-// msAt converts a byte offset in the (CBR) stream to milliseconds.
-func (r *recording) msAt(offset int64) int64 {
-	br := r.bitrate
-	if br <= 0 {
-		br = 320
-	}
-	return offset * 8 / int64(br)
 }
 
 func (r *recording) finalize(ctx context.Context, part, final string) error {
@@ -256,71 +241,70 @@ func (r *recording) finalize(ctx context.Context, part, final string) error {
 	if info.Description != "" {
 		comment.WriteString("\n\n" + info.Description)
 	}
-	comment.WriteString("\n\n" + showURL)
-
-	var meta strings.Builder
-	meta.WriteString(";FFMETADATA1\n")
-	tag := func(k, v string) {
-		if v != "" {
-			fmt.Fprintf(&meta, "%s=%s\n", k, ffmetaEscape(v))
-		}
+	if showURL != "" {
+		comment.WriteString("\n\n" + showURL)
 	}
-	tag("title", fmt.Sprintf("%s (%s)", ev.Title, start.Format("2006-01-02")))
-	tag("artist", artist)
-	tag("album", ev.Title)
-	tag("album_artist", stationName)
-	tag("date", start.Format("2006-01-02"))
-	tag("genre", genre)
-	tag("publisher", stationName)
-	tag("comment", comment.String())
-	tag("show", ev.Title)
-	tag("dj", dj)
-	tag("description", info.Description)
-	tag("show_start", start.Format(time.RFC3339))
-	tag("show_end", end.Format(time.RFC3339))
-	tag("show_url", showURL)
-	tag("source", r.cfg.StreamURL)
 
-	total := r.msAt(r.written)
+	var tag id3Tag
+	tag.text("TIT2", fmt.Sprintf("%s (%s)", ev.Title, start.Format("2006-01-02")))
+	tag.text("TPE1", artist)
+	tag.text("TALB", ev.Title)
+	tag.text("TPE2", stationName)
+	tag.text("TDRC", start.Format("2006-01-02"))
+	tag.text("TCON", genre)
+	tag.text("TPUB", stationName)
+	tag.text("TLEN", fmt.Sprint(r.audio.durationMs()))
+	tag.comment(comment.String())
+	tag.userText("show", ev.Title)
+	tag.userText("dj", dj)
+	tag.userText("description", info.Description)
+	tag.userText("show_start", start.Format(time.RFC3339))
+	tag.userText("show_end", end.Format(time.RFC3339))
+	tag.userText("show_url", showURL)
+	tag.userText("source", r.cfg.StreamURL)
+	tag.userURL("show", showURL)
+
+	var chs []chapter
+	total := r.audio.durationMs()
 	for i, t := range r.tracks {
 		endMs := total
 		if i+1 < len(r.tracks) {
-			endMs = r.msAt(r.tracks[i+1].offset)
+			endMs = r.tracks[i+1].ms
 		}
-		startMs := r.msAt(t.offset)
-		if endMs <= startMs {
-			continue
+		if endMs > t.ms {
+			chs = append(chs, chapter{startMs: t.ms, endMs: endMs, title: t.title})
 		}
-		fmt.Fprintf(&meta, "[CHAPTER]\nTIMEBASE=1/1000\nSTART=%d\nEND=%d\ntitle=%s\n", startMs, endMs, ffmetaEscape(t.title))
 	}
+	if len(chs) > maxChapters {
+		log.Printf("%q has %d tracks; only the first %d get chapters", ev.Title, len(chs), maxChapters)
+	}
+	tag.chapters(chs)
 
-	metaPath := part + ".ffmeta"
-	if err := os.WriteFile(metaPath, []byte(meta.String()), 0o644); err != nil {
+	// Write the tag followed by the audio, then swap it into place.
+	tmp := final + ".tmp"
+	out, err := os.Create(tmp)
+	if err != nil {
 		return err
 	}
-	defer os.Remove(metaPath)
-
-	tmp := part + ".tagged.mp3"
-	cmd := exec.CommandContext(ctx, r.cfg.FFmpegPath,
-		"-hide_banner", "-loglevel", "error", "-y",
-		"-f", "mp3", "-i", part,
-		"-f", "ffmetadata", "-i", metaPath,
-		"-map", "0:a", "-map_metadata", "1", "-map_chapters", "1",
-		"-c", "copy", // no transcoding: audio frames are copied as-is
-		"-id3v2_version", "4",
-		"-f", "mp3", tmp)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+	defer out.Close()
+	src, err := os.Open(part)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	if _, err := tag.WriteTo(out); err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, src); err != nil {
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
 	}
 	if err := os.Rename(tmp, final); err != nil {
 		return err
 	}
 	return os.Remove(part)
-}
-
-func ffmetaEscape(s string) string {
-	return strings.NewReplacer(`\`, `\\`, "=", `\=`, ";", `\;`, "#", `\#`, "\n", "\\\n").Replace(s)
 }
 
 var unsafeChars = regexp.MustCompile(`[/\\:*?"<>|\x00-\x1f]+`)
