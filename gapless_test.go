@@ -90,9 +90,7 @@ func TestGaplessDecode(t *testing.T) {
 			}
 			f.Write(stream[i:min(i+16000, len(stream))])
 		}
-		out := outputs{base: "show"}
-		out.showFile = filepath.Join(f.cfg.Destination, "show.mp3")
-		out.trackDir = filepath.Join(f.cfg.Destination, "show")
+		out := f.out
 		if err := f.finalize(t.Context(), f.part, out); err != nil {
 			t.Fatal(err)
 		}

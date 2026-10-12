@@ -32,7 +32,15 @@ func newFakeRecording(t *testing.T, cfg *Config) *fakeRecording {
 		Start: start, End: start.Add(time.Hour),
 	}}
 	cfg.Destination = dir
-	return &fakeRecording{recording: &recording{cfg: cfg, job: job, audio: &frameWriter{w: f}}, part: part}
+	base := "Train To Skaville - 2026-10-13"
+	rec := &recording{cfg: cfg, job: job, part: part, file: f, audio: &frameWriter{w: f}, out: outputs{
+		base:     base,
+		showFile: filepath.Join(dir, base+".mp3"),
+		trackDir: filepath.Join(dir, base),
+	}}
+	rec.startSongWriter(t.Context())
+	t.Cleanup(rec.stopSongWriter)
+	return &fakeRecording{recording: rec, part: part}
 }
 
 func (f *fakeRecording) frames(fill byte, n int) {
@@ -85,9 +93,16 @@ func TestWriteTracks(t *testing.T) {
 	f.title("WCBN station ID")
 	f.frames(3, 4)
 
-	out := outputs{base: "Train To Skaville - 2026-10-13"}
-	out.showFile = filepath.Join(f.cfg.Destination, out.base+".mp3")
-	out.trackDir = filepath.Join(f.cfg.Destination, out.base)
+	// The finished songs are saved while the show is still recording.
+	out := f.out
+	waitForFiles(t, out.trackDir, "01 - Toots & the Maytals - Pressure Drop.mp3", "02 - The Specials - A Message to You, Rudy.mp3")
+	if _, err := os.Stat(filepath.Join(out.trackDir, "03 - WCBN station ID.mp3")); !os.IsNotExist(err) {
+		t.Error("the song still playing was written early")
+	}
+	if m3u, _ := os.ReadFile(filepath.Join(out.trackDir, out.base+".m3u8")); strings.Count(string(m3u), ".mp3") != 2 {
+		t.Errorf("playlist mid-show:\n%s", m3u)
+	}
+
 	if err := f.finalize(t.Context(), f.part, out); err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +137,7 @@ func TestWriteTracks(t *testing.T) {
 		if !bytes.Equal(audio, wantAudio[i]) {
 			t.Errorf("%s: %d audio bytes, want %d", name, len(audio), len(wantAudio[i]))
 		}
-		if tags["TRCK"] != []string{"1/3", "2/3", "3/3"}[i] || tags["TALB"] != "Train To Skaville (2026-10-13)" ||
+		if tags["TRCK"] != []string{"1", "2", "3"}[i] || tags["TALB"] != "Train To Skaville (2026-10-13)" ||
 			tags["TPE2"] != "brian tomsic" || tags["TDRC"] != "2026-10-13" || tags["TCON"] != "Specialty" {
 			t.Errorf("%s tags: %v", name, tags)
 		}
@@ -149,9 +164,7 @@ func TestWriteTracksNoTitles(t *testing.T) {
 	cfg.ShowFile = false
 	f := newFakeRecording(t, cfg)
 	f.frames(7, 5)
-	out := outputs{base: "x"}
-	out.showFile = filepath.Join(f.cfg.Destination, "x.mp3")
-	out.trackDir = filepath.Join(f.cfg.Destination, "x")
+	out := f.out
 	if err := f.finalize(t.Context(), f.part, out); err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +172,7 @@ func TestWriteTracksNoTitles(t *testing.T) {
 		t.Error("show file written although show_file is off")
 	}
 	tags, audio := readTag(t, filepath.Join(out.trackDir, "01 - Train To Skaville.mp3"))
-	if !bytes.Equal(audio, f.audio) || tags["TRCK"] != "1/1" {
+	if !bytes.Equal(audio, f.audio) || tags["TRCK"] != "1" {
 		t.Errorf("single track: %d bytes, tags %v", len(audio), tags)
 	}
 }
@@ -198,5 +211,23 @@ func TestUniqueBase(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "Show - 2026-10-13 1900.mp3"), nil, 0o644)
 	if got := uniqueBase(dir, "Show - 2026-10-13", "1900"); got != "Show - 2026-10-13 1900-2" {
 		t.Errorf("got %q", got)
+	}
+}
+
+// waitForFiles waits for the background song writer to produce files.
+func waitForFiles(t *testing.T, dir string, names ...string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for _, name := range names {
+		for {
+			if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				entries, _ := os.ReadDir(dir)
+				t.Fatalf("%s not written; folder has %v", name, entries)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 }

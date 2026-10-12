@@ -1,13 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -38,19 +36,24 @@ func (r *recording) showMetadata(ctx context.Context) showMeta {
 	m := showMeta{Title: ev.Title, Start: ev.Start.In(loc), End: ev.End.In(loc), URL: ev.URL, Genre: "Freeform"}
 
 	// The show description lives on the show page, not in the calendar feed.
-	if ev.URL != "" {
-		info, err := fetchShowInfo(ctx, ev.URL)
-		if err != nil {
+	r.infoOnce.Do(func() {
+		if ev.URL == "" {
+			return
+		}
+		var err error
+		if r.info, err = fetchShowInfo(ctx, ev.URL); err != nil {
 			log.Printf("couldn't load show details for %q: %v", ev.Title, err)
 		}
-		m.Description = info.Description
-		if info.URL != "" {
-			m.URL = info.URL
-		}
+	})
+	m.Description = r.info.Description
+	if r.info.URL != "" {
+		m.URL = r.info.URL
 	}
 	m.DJ = ev.DJ
 	if m.DJ == "" {
+		r.mu.Lock()
 		m.DJ = r.dj
+		r.mu.Unlock()
 	}
 	m.Artist = stationName
 	if m.DJ != "" {
@@ -80,21 +83,16 @@ func (m showMeta) albumTitle() string { return fmt.Sprintf("%s (%s)", m.Title, m
 // removes it. It returns an error only if no output could be written, in
 // which case the caller keeps the raw audio.
 func (r *recording) finalize(ctx context.Context, part string, out outputs) error {
+	// Most songs are already saved; this writes the last one.
+	failed := r.finishSongs()
 	meta := r.showMetadata(ctx)
-	wrote := false
 	if r.cfg.ShowFile {
 		if err := r.writeShowFile(meta, part, out.showFile); err != nil {
 			return err
 		}
-		wrote = true
-	}
-	if r.cfg.TrackFiles {
-		if err := r.writeTracks(meta, part, out); err != nil {
-			if !wrote {
-				return err
-			}
-			log.Printf("splitting %q into tracks failed: %v", meta.Title, err)
-		}
+	} else if failed > 0 {
+		// The song files are the only output, so keep the raw audio too.
+		return fmt.Errorf("%d song files couldn't be written", failed)
 	}
 	return os.Remove(part)
 }
@@ -139,6 +137,7 @@ func (r *recording) writeShowFile(meta showMeta, part, path string) error {
 
 // segment is the stretch of audio between one stream title change and the next.
 type segment struct {
+	n                int // song number, for song files
 	mark             trackMark
 	leadOff          int64 // where a gapless file starts, overlapFrames before startOff
 	startOff, endOff int64
@@ -162,89 +161,6 @@ func (r *recording) segments() []segment {
 		}
 	}
 	return segs
-}
-
-// writeTracks writes each song as its own MP3, cut on frame boundaries from
-// the recorded audio, plus an M3U playlist in air order. Everything is built
-// in a hidden folder and renamed into place once complete.
-func (r *recording) writeTracks(meta showMeta, part string, out outputs) error {
-	segs := r.segments()
-	src, err := os.Open(part)
-	if err != nil {
-		return err
-	}
-	defer src.Close()
-
-	tmp := filepath.Join(filepath.Dir(out.trackDir), "."+out.base+".tracks")
-	os.RemoveAll(tmp) // left over from a crash
-	if err := os.Mkdir(tmp, 0o755); err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmp)
-
-	width := max(2, len(fmt.Sprint(len(segs))))
-	playlist := []string{"#EXTM3U", "#PLAYLIST:" + meta.albumTitle()}
-	for i, s := range segs {
-		n := i + 1
-		title, artist := splitSong(s.mark.title)
-		name := title
-		if artist != "" {
-			name = artist + " - " + title
-		}
-		file := fmt.Sprintf("%0*d - %s.mp3", width, n, truncateName(sanitize(name), 150))
-
-		var tag id3Tag
-		tag.text("TIT2", title)
-		tag.text("TPE1", artist)
-		tag.text("TALB", meta.albumTitle())
-		tag.text("TPE2", meta.Artist)
-		tag.text("TRCK", fmt.Sprintf("%d/%d", n, len(segs)))
-		tag.text("TDRC", meta.date())
-		tag.text("TCON", meta.Genre)
-		tag.text("TPUB", stationName)
-		tag.text("TLEN", fmt.Sprint(s.endMs-s.startMs))
-		played := s.mark.at.In(r.cfg.location)
-		tag.comment(fmt.Sprintf("Played on %s with %s, %s at %s", meta.Title, meta.Artist, played.Format("Monday, January 2, 2006"), played.Format("3:04 PM")))
-		tag.userText("show", meta.Title)
-		tag.userText("dj", meta.DJ)
-		tag.userText("aired_at", played.Format(time.RFC3339))
-		tag.userText("stream_title", s.mark.title)
-		tag.userText("show_url", meta.URL)
-		tag.userURL("show", meta.URL)
-
-		var audio io.Reader = io.NewSectionReader(src, s.startOff, s.endOff-s.startOff)
-		if r.cfg.Gapless {
-			// Start a couple of frames early, and say how many samples to skip.
-			g := gaplessInfo{bytes: s.endOff - s.leadOff}
-			frames, header, err := scanFrames(src, s.leadOff, s.endOff, s.startOff)
-			if err != nil {
-				return err
-			}
-			lead, _, err := scanFrames(src, s.leadOff, s.startOff, s.startOff)
-			if err != nil {
-				return err
-			}
-			g.frames, g.header, g.lead = frames, header, lead
-			info, err := infoFrame(g)
-			if err != nil {
-				return err
-			}
-			fh, _ := parseFrameHeader(header[:])
-			tag.commentDesc("iTunSMPB", iTunSMPB(g, fh.samples))
-			audio = io.MultiReader(bytes.NewReader(info), io.NewSectionReader(src, s.leadOff, s.endOff-s.leadOff))
-		}
-		if err := writeTagged(filepath.Join(tmp, file), &tag, audio); err != nil {
-			return err
-		}
-		playlist = append(playlist,
-			fmt.Sprintf("#EXTINF:%d,%s", (s.endMs-s.startMs+500)/1000, strings.ReplaceAll(name, "\n", " ")),
-			file)
-	}
-	m3u := filepath.Join(tmp, out.base+".m3u8")
-	if err := os.WriteFile(m3u, []byte(strings.Join(playlist, "\n")+"\n"), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, out.trackDir)
 }
 
 // writeTagged writes an ID3 tag followed by audio to path, via a temp file.

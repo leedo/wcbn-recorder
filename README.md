@@ -80,9 +80,10 @@ Each recording produces:
 
 If a recording with that name already exists, the start time is appended
 (e.g. `<show> - YYYY-MM-DD 1900`). Set `show_file` or `track_files` to `false`
-to skip either output. While recording, audio goes to a hidden `.….part` file,
-and the song folder is assembled under a hidden name and renamed into place
-when complete. Ctrl-C / SIGTERM stops gracefully: in-progress recordings are
+to skip either output. While recording, audio goes to a hidden `.….part` file.
+Each song file is written as soon as the stream moves on to the next song, so
+the folder fills up during the show, and the playlist is updated after each
+one; only the last song and the whole-show file are written when the show ends. Ctrl-C / SIGTERM stops gracefully: in-progress recordings are
 tagged and kept.
 
 The machine has to stay awake: nothing is recorded while it sleeps, and the
@@ -188,7 +189,9 @@ audio to overlap. Gapless players skip the decoder's own 529-sample (12 ms)
 delay at the start of those files.
 
 Each song file's ID3 tag has the title, artist, the show and date as the album,
-the DJ as album artist, track number, date, genre, and length. A comment says
+the DJ as album artist, track number, date, genre, and length. The track number
+has no total ("3", not "3/12"), since the number of songs isn't known until the
+show ends. A comment says
 when it aired. Custom tags hold `show`, `dj`, `aired_at`, `stream_title` (the
 raw title from the stream), and `show_url`.
 

@@ -100,6 +100,7 @@
   details.songs li { display: grid; grid-template-columns: 2.5em 5.5em 1fr auto; gap: 10px; padding: 6px 2px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
   details.songs li .n, details.songs li .at, details.songs li .len { color: var(--muted); }
   details.songs li.current { font-weight: 600; }
+  details.songs .saved { color: #3a9d5d; }
   details.songs li.current .len::after { content: " ●"; color: var(--rec); }
 </style>
 </head>
@@ -323,6 +324,7 @@
   <div class="progress" role="progressbar" aria-label="Show progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Progress}}"><div style="width: {{.Progress}}%"></div></div>
   <div class="stats muted">
     Recorded {{dur .RecordedMs}} · {{mb .Bytes}} · stops at {{clock .Until}}
+    {{if .SongFiles}} · {{.Saved}} song{{if ne .Saved 1}}s{{end}} saved{{end}}
     {{with .Reconnects}} · {{.}} reconnect{{if gt . 1}}s{{end}}{{end}}
     {{if and (not .Connected) (not .Finishing) .LastErr}}<br>Last error: {{.LastErr}}{{end}}
   </div>
@@ -340,7 +342,7 @@
   <details class="songs">
     <summary>Songs recorded so far ({{len .}})</summary>
     <ol>
-      {{range .}}<li class="{{if .Current}}current{{end}}"><span class="n">{{.N}}.</span><span class="at">{{clock .At}}</span><span>{{.Title}}{{with .Artist}} <span class="muted">— {{.}}</span>{{end}}</span><span class="len">{{dur .DurationMs}}</span></li>
+      {{range .}}<li class="{{if .Current}}current{{end}}"><span class="n">{{.N}}.</span><span class="at">{{clock .At}}</span><span>{{.Title}}{{with .Artist}} <span class="muted">— {{.}}</span>{{end}}</span><span class="len">{{dur .DurationMs}}{{if .Saved}} <span class="saved" title="Saved as its own file">✓</span>{{end}}</span></li>
       {{end}}
     </ol>
   </details>

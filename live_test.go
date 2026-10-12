@@ -32,6 +32,14 @@ func TestLiveStatus(t *testing.T) {
 	if st.Current == nil || st.Current.N != 2 || st.Current.Artist != "The Specials" || !st.Current.Current {
 		t.Errorf("current = %+v", st.Current)
 	}
+	// The finished song is saved in the background; the current one isn't.
+	waitForFiles(t, f.out.trackDir, "01 - Toots & the Maytals - Pressure Drop.mp3")
+	for deadline := time.Now().Add(5 * time.Second); f.status(time.Now()).Saved < 1 && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if st := f.status(time.Now()); st.Saved != 1 || !st.Tracks[0].Saved || st.Tracks[1].Saved || !st.SongFiles {
+		t.Errorf("saved = %d, tracks %+v", st.Saved, st.Tracks)
+	}
 	// Progress is clamped to the scheduled slot.
 	if st := f.status(f.job.Event.End.Add(time.Minute)); st.Progress != 100 {
 		t.Errorf("progress after end = %d", st.Progress)

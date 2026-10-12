@@ -56,6 +56,17 @@ type recording struct {
 	lastErr    string
 	reconnects int
 	finishing  bool
+	songCount  int          // songs queued for writing
+	songsSaved map[int]bool // song numbers written to files
+
+	// Song files are written by a background goroutine as songs finish.
+	songs      chan segment
+	songsDone  chan struct{}
+	songsOnce  sync.Once
+	songErrors int // written only by the song writer
+
+	infoOnce sync.Once
+	info     ShowInfo // from the show's Spinitron page, fetched once
 }
 
 // Record streams the live program to disk until job.Until (or ctx is
@@ -99,6 +110,7 @@ func (r *recording) Run(ctx context.Context) error {
 	recCtx, cancel := context.WithDeadline(ctx, job.Until)
 	defer cancel()
 	go stopAtWallTime(recCtx, job.Until, cancel)
+	r.startSongWriter(context.WithoutCancel(ctx))
 	backoff := time.Second
 	for recCtx.Err() == nil {
 		before := r.bytesWritten()
@@ -130,6 +142,7 @@ func (r *recording) Run(ctx context.Context) error {
 		return err
 	}
 	if r.audio.written == 0 {
+		r.stopSongWriter()
 		os.Remove(r.part)
 		return fmt.Errorf("no audio received for %q", job.Event.Title)
 	}
@@ -265,6 +278,9 @@ func (r *recording) onMetadata(meta string) {
 	if len(r.tracks) == 0 {
 		// The first title covers the audio from the start of the file.
 		mark.ms, mark.offset, mark.lead = 0, 0, 0
+	}
+	if n := len(r.tracks); n > 0 {
+		r.queueSong(r.tracks[n-1], mark) // the previous song just finished
 	}
 	r.tracks = append(r.tracks, mark)
 	log.Printf("[%s] now playing: %s", r.job.Event.Title, track)

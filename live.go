@@ -18,6 +18,8 @@ type liveStatus struct {
 	Finishing  bool // writing output files
 	LastErr    string
 	Reconnects int
+	SongFiles  bool // song files are being written
+	Saved      int  // songs saved as files so far
 	Current    *liveTrack
 	Tracks     []liveTrack // air order
 }
@@ -29,6 +31,7 @@ type liveTrack struct {
 	At         time.Time
 	DurationMs int64
 	Current    bool
+	Saved      bool // written to its own file
 }
 
 func (r *recording) status(now time.Time) liveStatus {
@@ -40,6 +43,7 @@ func (r *recording) status(now time.Time) liveStatus {
 		Start: ev.Start, End: ev.End, Until: r.job.Until, Started: r.started,
 		RecordedMs: r.audio.durationMs(), Bytes: r.audio.written,
 		Connected: r.connected, Finishing: r.finishing, LastErr: r.lastErr, Reconnects: r.reconnects,
+		SongFiles: r.cfg.TrackFiles, Saved: len(r.songsSaved),
 	}
 	if st.DJ == "" {
 		st.DJ = r.dj
@@ -47,7 +51,7 @@ func (r *recording) status(now time.Time) liveStatus {
 	if slot := ev.End.Sub(ev.Start); slot > 0 {
 		st.Progress = int(min(max(now.Sub(ev.Start)*100/slot, 0), 100))
 	}
-	// Number songs the way writeTracks will: titles that never got any audio
+	// Number songs the way song files are numbered: titles that never got any audio
 	// (replaced before the next chunk arrived) are skipped, except the
 	// current one, which is still growing.
 	for i, m := range r.tracks {
@@ -62,7 +66,7 @@ func (r *recording) status(now time.Time) liveStatus {
 		title, artist := splitSong(m.title)
 		st.Tracks = append(st.Tracks, liveTrack{
 			N: len(st.Tracks) + 1, Title: title, Artist: artist, At: m.at,
-			DurationMs: end - m.ms, Current: last,
+			DurationMs: end - m.ms, Current: last, Saved: r.songsSaved[len(st.Tracks)+1],
 		})
 	}
 	if n := len(st.Tracks); n > 0 {
