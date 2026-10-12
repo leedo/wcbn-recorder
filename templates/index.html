@@ -441,8 +441,6 @@
   {{else}}
   <div class="now-playing"><span class="meta">Waiting for song information from the stream…</span></div>
   {{end}}
-  </div>
-  </div>
   {{with .Tracks}}
   <details class="songs">
     <summary>Songs recorded so far ({{len .}})</summary>
@@ -452,6 +450,8 @@
     </ol>
   </details>
   {{end}}
+  </div>
+  </div>
 </section>
 {{end}}
 {{end}}
