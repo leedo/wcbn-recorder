@@ -1,8 +1,9 @@
 # wcbn-recorder
 
 Watches the WCBN program calendar on Spinitron
-(<https://spinitron.com/WCBN/calendar>) and records configured shows from the
-live stream to disk. Audio is saved exactly as streamed (320 kbps MP3), with
+(<https://spinitron.com/WCBN/calendar>) and records the shows you pick from the
+live stream to disk. Shows are picked in a web UI, and show details and
+selections are kept in a SQLite database. Audio is saved exactly as streamed (320 kbps MP3), with
 an ID3 tag and per-track chapters added. It's a single Go binary with no
 runtime dependencies.
 
@@ -10,12 +11,34 @@ runtime dependencies.
 
 ```sh
 go build -o wcbn-recorder .
-cp config.example.json config.json   # edit destination + programs
-./wcbn-recorder -config config.json -list    # show upcoming matching shows
+cp config.example.json config.json   # set destination
+./wcbn-recorder -config config.json          # run; then open http://127.0.0.1:8080/
+./wcbn-recorder -config config.json -list    # show upcoming selected recordings
 ./wcbn-recorder -config config.json -test 30s  # record a short clip to verify the setup
 ./wcbn-recorder -config config.json -shows shows.txt  # list every show with its description
-./wcbn-recorder -config config.json          # run continuously
 ```
+
+## Web UI
+
+The UI lists every show on the calendar with its DJ, category, weekly
+schedule, next airing, and description. Click **Record** to select a show, and
+use search, the category filter and "Selected only" to narrow the list. Above
+the list are the recordings in progress and the selected shows coming up in the
+next week. Selecting a show that is on the air starts recording right away.
+Unselecting a show that is being recorded lets that recording finish.
+
+Show details come from Spinitron. The calendar is re-read every
+`poll_interval`, and each show's page is refetched once a day. **Refresh now**
+re-reads both immediately. A selected show that drops off the calendar, for
+example between semesters, stays in the list and is recorded again when it
+returns. Unselected shows that are no longer on the calendar can be removed.
+
+The UI has no login, so by default it only listens on `127.0.0.1`. To reach it
+from another machine, use an SSH tunnel (`ssh -L 8080:127.0.0.1:8080 server`)
+or put it behind a reverse proxy that adds authentication. Avoid simply setting
+`listen` to `0.0.0.0:8080`: anyone who can reach the port could change your
+selections. Requests from other websites are rejected, so a page open in your
+browser can't change them.
 
 Recordings are written to `<destination>/<program>/<show> - YYYY-MM-DD.mp3`.
 If that file already exists, the start time is appended. While recording, audio goes to a hidden
@@ -39,6 +62,10 @@ sudo systemctl enable --now wcbn-recorder
 journalctl -u wcbn-recorder -f
 ```
 
+The database is created in the service's working directory
+(`/var/lib/wcbn-recorder/wcbn-recorder.db`), and the UI listens on
+`127.0.0.1:8080` on the server (see the Web UI section for remote access).
+
 The sandbox only allows writes under `ReadWritePaths`. If `destination` is
 somewhere other than `/var/lib/wcbn-recorder`, add that path to
 `ReadWritePaths`. If the destination is under `/home`, also change `ProtectHome`
@@ -49,8 +76,9 @@ to `no`. Then make sure the `wcbn-recorder` user can write there.
 | key | default | notes |
 |---|---|---|
 | `destination` | (required) | root folder for recordings |
-| `programs` | (required) | show names, matched case-insensitively against calendar titles (see `-shows`) |
-| `match_substring` | `false` | match program names anywhere in the title |
+| `listen` | `127.0.0.1:8080` | address of the web UI |
+| `database` | `wcbn-recorder.db` | SQLite file for show details and selections; relative to the working directory |
+| `programs` | none | optional show titles to select; imported into the database once, on first start |
 | `stream_url` | `https://floyd.wcbn.org:8443/wcbn-hd.mp3` | |
 | `schedule_url` | `https://spinitron.com/WCBN/calendar` | Spinitron HTML calendar |
 | `poll_interval` | `15m` | how often to re-fetch the schedule |

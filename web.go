@@ -1,0 +1,232 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"html/template"
+	"log"
+	"net/http"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+)
+
+//go:embed templates/*.html
+var templateFS embed.FS
+
+type jobView struct {
+	ShowID     int64
+	Title      string
+	DJ         string
+	Start, End time.Time
+}
+
+type showView struct {
+	Show
+	NextAiring   time.Time
+	OnCalendar   bool
+	RecordingNow bool
+}
+
+type pageData struct {
+	LastRefresh time.Time
+	RefreshErr  string
+	Recording   []jobView
+	Upcoming    []jobView
+	Shows       []showView
+	Categories  []string
+	Selected    int
+}
+
+func (a *App) handler() http.Handler {
+	tmpl := template.Must(template.New("").Funcs(template.FuncMap{
+		"when":  func(t time.Time) string { return t.In(a.cfg.location).Format("Mon Jan 2, 3:04 PM") },
+		"clock": func(t time.Time) string { return t.In(a.cfg.location).Format("3:04 PM") },
+		"ago":   ago,
+		"lower": strings.ToLower,
+	}).ParseFS(templateFS, "templates/*.html"))
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		data, err := a.pageData(r.Context())
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		render(w, tmpl, "index.html", data)
+	})
+	mux.HandleFunc("POST /shows/{id}/record", func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		record := r.FormValue("record") == "1"
+		if err := a.store.SetRecord(r.Context(), id, record); err != nil {
+			httpError(w, err)
+			return
+		}
+		poke(a.wake) // start right away if the show is on now
+		if !wantsJSON(r) {
+			http.Redirect(w, r, fmt.Sprintf("/#show-%d", id), http.StatusSeeOther)
+			return
+		}
+		// Send back the re-rendered upcoming list so the page can update in place.
+		data, err := a.pageData(r.Context())
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		var upcoming bytes.Buffer
+		if err := tmpl.ExecuteTemplate(&upcoming, "upcoming", data); err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"record": record, "selected": data.Selected, "upcoming": upcoming.String()})
+	})
+	mux.HandleFunc("POST /shows/{id}/delete", func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		if err := a.store.Delete(r.Context(), id); err != nil {
+			httpError(w, err)
+			return
+		}
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	})
+	mux.HandleFunc("POST /refresh", func(w http.ResponseWriter, r *http.Request) {
+		poke(a.refreshNow)
+		// Also refetch every show page, not just stale ones.
+		go a.refreshDetails(context.WithoutCancel(r.Context()), time.Now())
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	})
+
+	// Reject cross-site form posts, so other web pages can't change selections.
+	return http.NewCrossOriginProtection().Handler(mux)
+}
+
+func (a *App) pageData(ctx context.Context) (pageData, error) {
+	shows, err := a.store.Shows(ctx)
+	if err != nil {
+		return pageData{}, err
+	}
+	now := time.Now()
+	jobs, err := a.upcoming(ctx, now)
+	if err != nil {
+		return pageData{}, err
+	}
+
+	a.mu.Lock()
+	events := a.events
+	active := make([]Job, 0, len(a.active))
+	for _, j := range a.active {
+		active = append(active, j)
+	}
+	data := pageData{LastRefresh: a.lastRefresh}
+	if a.refreshErr != nil {
+		data.RefreshErr = a.refreshErr.Error()
+	}
+	a.mu.Unlock()
+
+	// Next airing (or current one) for each show on the calendar.
+	next := map[string]time.Time{}
+	for _, ev := range events {
+		k := normalize(ev.Title)
+		if ev.End.After(now) && (next[k].IsZero() || ev.Start.Before(next[k])) {
+			next[k] = ev.Start
+		}
+	}
+	recordingNow := map[string]bool{}
+	for _, j := range active {
+		recordingNow[normalize(j.Event.Title)] = true
+	}
+	ids := map[string]Show{}
+	categories := map[string]bool{}
+	for _, sh := range shows {
+		ids[sh.Key] = sh
+		if sh.Category != "" {
+			categories[sh.Category] = true
+		}
+		if sh.Record {
+			data.Selected++
+		}
+		_, onCal := next[sh.Key]
+		data.Shows = append(data.Shows, showView{Show: sh, NextAiring: next[sh.Key], OnCalendar: onCal, RecordingNow: recordingNow[sh.Key]})
+	}
+	for c := range categories {
+		data.Categories = append(data.Categories, c)
+	}
+	slices.Sort(data.Categories)
+
+	view := func(j Job) jobView {
+		sh := ids[normalize(j.Event.Title)]
+		dj := j.Event.DJ
+		if dj == "" {
+			dj = sh.DJ // the calendar often omits the DJ; the show page has it
+		}
+		return jobView{ShowID: sh.ID, Title: j.Event.Title, DJ: dj, Start: j.Event.Start, End: j.Event.End}
+	}
+	slices.SortFunc(active, func(x, y Job) int { return x.Event.Start.Compare(y.Event.Start) })
+	for _, j := range active {
+		data.Recording = append(data.Recording, view(j))
+	}
+	for _, j := range jobs {
+		if !recordingNow[normalize(j.Event.Title)] && len(data.Upcoming) < 15 {
+			data.Upcoming = append(data.Upcoming, view(j))
+		}
+	}
+	return data, nil
+}
+
+func ago(t time.Time) string {
+	if t.IsZero() {
+		return "never"
+	}
+	d := time.Since(t).Round(time.Minute)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%d min ago", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%d h ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%d days ago", int(d.Hours()/24))
+	}
+}
+
+func wantsJSON(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "application/json")
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
+}
+
+func render(w http.ResponseWriter, tmpl *template.Template, name string, data any) {
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, name, data); err != nil {
+		httpError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	buf.WriteTo(w)
+}
+
+func httpError(w http.ResponseWriter, err error) {
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	log.Printf("web: %v", err)
+	http.Error(w, "internal error", http.StatusInternalServerError)
+}

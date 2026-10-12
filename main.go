@@ -1,29 +1,23 @@
-// Command wcbn-recorder watches the WCBN schedule and records configured
-// shows from the live stream, without transcoding.
+// Command wcbn-recorder watches the WCBN schedule and records selected shows
+// from the live stream, without transcoding. Shows are selected in a web UI.
 package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
-	"sort"
-	"strings"
-	"sync"
 	"syscall"
 	"time"
 )
 
-const (
-	lookahead = 7 * 24 * time.Hour
-	maxSleep  = time.Minute
-)
-
 func main() {
 	configPath := flag.String("config", "config.json", "path to config file")
-	list := flag.Bool("list", false, "print upcoming matching shows and exit")
+	list := flag.Bool("list", false, "print upcoming selected shows and exit")
 	test := flag.Duration("test", 0, "record a short test clip of this length now and exit (e.g. 30s)")
 	shows := flag.String("shows", "", "write all shows on the schedule, with descriptions, to this text file and exit")
 	flag.Parse()
@@ -49,119 +43,49 @@ func main() {
 		if err := Record(ctx, cfg, job); err != nil {
 			log.Fatal(err)
 		}
+		return
 	case *shows != "":
 		if err := writeShowList(ctx, cfg, *shows); err != nil {
 			log.Fatal(err)
 		}
-	case *list:
-		events, err := fetchUpcoming(ctx, cfg)
+		return
+	}
+
+	store, err := openStore(cfg.Database)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.ImportPrograms(ctx, cfg.Programs); err != nil {
+		log.Fatal(err)
+	}
+	app := newApp(cfg, store)
+
+	if *list {
+		if !app.refresh(ctx) {
+			os.Exit(1)
+		}
+		jobs, err := app.upcoming(ctx, time.Now())
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Printf("%d events in schedule\n", len(events))
-		for _, j := range matchingJobs(cfg, events, time.Now()) {
-			fmt.Printf("%s  %-30s  %s – %s\n", j.Program, j.Event.Title,
+		for _, j := range jobs {
+			fmt.Printf("%-30s  %s – %s\n", j.Event.Title,
 				j.Event.Start.In(cfg.location).Format("Mon Jan 2 3:04 PM"),
 				j.Event.End.In(cfg.location).Format("3:04 PM"))
 		}
-	default:
-		run(ctx, cfg)
-	}
-}
-
-// run polls the schedule and starts a recording whenever a matching show's
-// window (with pre/post-roll) is open.
-func run(ctx context.Context, cfg *Config) {
-	log.Printf("watching for: %s", strings.Join(cfg.Programs, ", "))
-	var (
-		mu      sync.Mutex
-		events  []Event
-		started = map[string]bool{}
-		wg      sync.WaitGroup
-	)
-
-	refresh := func() bool {
-		evs, err := fetchUpcoming(ctx, cfg)
-		if err != nil {
-			log.Printf("schedule refresh failed: %v", err)
-			return false
-		}
-		mu.Lock()
-		events = evs
-		mu.Unlock()
-		jobs := matchingJobs(cfg, evs, time.Now())
-		log.Printf("schedule refreshed: %d events, %d upcoming matches", len(evs), len(jobs))
-		if len(jobs) > 0 {
-			log.Printf("next: %q at %s", jobs[0].Event.Title, jobs[0].Event.Start.In(cfg.location).Format("Mon Jan 2 3:04 PM"))
-		}
-		return true
+		return
 	}
 
-	nextRefresh := time.Now()
-	for {
-		now := time.Now()
-		if !now.Before(nextRefresh) {
-			if refresh() {
-				nextRefresh = now.Add(cfg.PollInterval.Duration)
-			} else {
-				nextRefresh = now.Add(time.Minute)
-			}
+	srv := &http.Server{Addr: cfg.Listen, Handler: app.handler()}
+	go func() {
+		log.Printf("web UI at http://%s/", cfg.Listen)
+		if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("web UI: %v", err)
 		}
-
-		// Wake for whichever comes first: a refresh, the next show, or maxSleep.
-		wake := min(time.Until(nextRefresh), maxSleep)
-		mu.Lock()
-		for _, job := range matchingJobs(cfg, events, now) {
-			key := job.Event.key()
-			if started[key] {
-				continue
-			}
-			if begin := job.Event.Start.Add(-cfg.PreRoll.Duration); now.Before(begin) {
-				wake = min(wake, begin.Sub(now))
-				continue
-			}
-			started[key] = true
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				if err := Record(ctx, cfg, job); err != nil {
-					log.Printf("recording %q failed: %v", job.Event.Title, err)
-				}
-			}()
-		}
-		mu.Unlock()
-
-		select {
-		case <-ctx.Done():
-			log.Printf("shutting down; finishing in-progress recordings")
-			wg.Wait()
-			return
-		case <-time.After(wake):
-		}
-	}
-}
-
-// matchingJobs returns configured shows that haven't finished yet, soonest first.
-func matchingJobs(cfg *Config, events []Event, now time.Time) []Job {
-	seen := map[string]bool{}
-	var jobs []Job
-	for _, ev := range events {
-		program, ok := cfg.matches(ev.Title)
-		if !ok {
-			continue
-		}
-		until := ev.End.Add(cfg.PostRoll.Duration)
-		if !now.Before(until) || seen[ev.key()] {
-			continue
-		}
-		seen[ev.key()] = true
-		jobs = append(jobs, Job{Program: program, Event: ev, Until: until})
-	}
-	sort.Slice(jobs, func(i, j int) bool { return jobs[i].Event.Start.Before(jobs[j].Event.Start) })
-	return jobs
-}
-
-func fetchUpcoming(ctx context.Context, cfg *Config) ([]Event, error) {
-	now := time.Now()
-	return fetchSchedule(ctx, cfg, now.Add(-24*time.Hour), now.Add(lookahead))
+	}()
+	app.run(ctx)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	srv.Shutdown(shutdownCtx)
 }

@@ -4,7 +4,6 @@
     "Train To Skaville",
     "The Dancehall Reggae Show"
   ],
-  "match_substring": false,
   "stream_url": "https://floyd.wcbn.org:8443/wcbn-hd.mp3",
   "schedule_url": "https://spinitron.com/WCBN/calendar",
   "poll_interval": "15m",

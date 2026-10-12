@@ -27,12 +27,14 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 type Config struct {
 	// Destination is the root folder; each program gets a subfolder.
 	Destination string `json:"destination"`
-	// Programs are show names to record, matched case-insensitively against
-	// the show titles on the schedule.
+	// Programs is an optional list of show titles to select for recording. It
+	// is imported into the database once; after that, use the web UI.
 	Programs []string `json:"programs"`
-	// MatchSubstring matches programs anywhere in the show title instead of
-	// requiring an exact (case-insensitive) match.
-	MatchSubstring bool `json:"match_substring"`
+
+	// Listen is the address of the web UI, e.g. "127.0.0.1:8080".
+	Listen string `json:"listen"`
+	// Database is the SQLite file holding show metadata and selections.
+	Database string `json:"database"`
 
 	StreamURL string `json:"stream_url"`
 	// ScheduleURL is the Spinitron HTML program calendar.
@@ -60,6 +62,8 @@ func loadConfig(path string) (*Config, error) {
 		PreRoll:      Duration{1 * time.Minute},
 		PostRoll:     Duration{2 * time.Minute},
 		Timezone:     "America/Detroit",
+		Listen:       "127.0.0.1:8080",
+		Database:     "wcbn-recorder.db",
 	}
 	if err := json.Unmarshal(b, cfg); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
@@ -67,25 +71,10 @@ func loadConfig(path string) (*Config, error) {
 	if cfg.Destination == "" {
 		return nil, fmt.Errorf("config: destination is required")
 	}
-	if len(cfg.Programs) == 0 {
-		return nil, fmt.Errorf("config: at least one program is required")
-	}
 	if cfg.location, err = time.LoadLocation(cfg.Timezone); err != nil {
 		return nil, fmt.Errorf("config: timezone: %w", err)
 	}
 	return cfg, nil
-}
-
-// matches reports which configured program (if any) a schedule summary matches.
-func (c *Config) matches(summary string) (string, bool) {
-	s := normalize(summary)
-	for _, p := range c.Programs {
-		n := normalize(p)
-		if s == n || (c.MatchSubstring && strings.Contains(s, n)) {
-			return p, true
-		}
-	}
-	return "", false
 }
 
 func normalize(s string) string {

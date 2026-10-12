@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WCBN Recorder</title>
+<style>
+  :root {
+    --bg: #fafaf8; --fg: #1d1d1f; --muted: #6b6b70; --line: #e3e3e0;
+    --accent: #b3122d; --accent-bg: #fbe9ec; --rec: #c4141c; --card: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161618; --fg: #ececee; --muted: #9a9aa2; --line: #2e2e33;
+      --accent: #ff6b81; --accent-bg: #3a1d24; --rec: #ff4d55; --card: #1f1f22;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 20px 64px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 16px; margin: 32px 0 10px; }
+  a { color: inherit; }
+  .muted { color: var(--muted); }
+  .status { font-size: 13px; display: flex; gap: 10px; align-items: center; }
+  .error { background: var(--accent-bg); border: 1px solid var(--accent); border-radius: 8px; padding: 10px 14px; margin-top: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+  .list { list-style: none; margin: 0; padding: 0; }
+  .list li { padding: 10px 14px; border-top: 1px solid var(--line); display: flex; gap: 14px; align-items: baseline; }
+  .list li:first-child { border-top: 0; }
+  .list .time { min-width: 190px; font-variant-numeric: tabular-nums; }
+  .empty { padding: 12px 14px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--rec); margin-right: 6px; animation: pulse 1.6s infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  .controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  input[type=search], select { font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--fg); }
+  input[type=search] { flex: 1; min-width: 220px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 9px 12px; border-top: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border-top: 0; }
+  tr.selected { background: var(--accent-bg); }
+  tr.off td:not(:first-child) { opacity: .6; }
+  td.title { min-width: 220px; }
+  td.title a { font-weight: 600; text-decoration: none; }
+  td.title a:hover { text-decoration: underline; }
+  details { margin-top: 4px; font-size: 13px; }
+  details summary { cursor: pointer; color: var(--muted); }
+  details p { margin: 6px 0 0; white-space: pre-line; }
+  .sched { font-size: 13px; max-width: 260px; }
+  .nowrap { white-space: nowrap; }
+  .tag { font-size: 11px; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line); white-space: nowrap; }
+  .tag.rec { border-color: var(--rec); color: var(--rec); }
+  button { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; white-space: nowrap; }
+  button:hover { border-color: var(--muted); }
+  button.toggle[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.link { border: 0; background: none; padding: 0; color: var(--muted); text-decoration: underline; font-size: 12px; }
+  form { display: inline; margin: 0; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>WCBN Recorder</h1>
+  <div class="status muted">
+    <span>Schedule updated {{ago .LastRefresh}}</span>
+    <form method="post" action="/refresh"><button type="submit">Refresh now</button></form>
+  </div>
+</header>
+{{with .RefreshErr}}<div class="error"><strong>Couldn't load the schedule:</strong> {{.}}</div>{{end}}
+
+{{with .Recording}}
+<h2>Recording now</h2>
+<div class="card"><ul class="list">
+  {{range .}}<li><span class="time"><span class="dot"></span>until {{clock .End}}</span><span><strong>{{.Title}}</strong>{{with .DJ}} <span class="muted">with {{.}}</span>{{end}}</span></li>{{end}}
+</ul></div>
+{{end}}
+
+<h2>Upcoming recordings</h2>
+<div class="card" id="upcoming">{{template "upcoming" .}}</div>
+
+<h2>Shows <span class="muted" id="selected-count">({{.Selected}} selected)</span></h2>
+<div class="controls">
+  <input type="search" id="q" placeholder="Search shows, DJs, descriptions…" autocomplete="off">
+  <select id="category">
+    <option value="">All categories</option>
+    {{range .Categories}}<option value="{{lower .}}">{{.}}</option>{{end}}
+  </select>
+  <label><input type="checkbox" id="only-selected"> Selected only</label>
+</div>
+<div class="card">
+<table>
+  <thead><tr><th>Record</th><th>Show</th><th>DJ</th><th>Category</th><th>Schedule</th><th>Next airing</th></tr></thead>
+  <tbody>
+  {{range .Shows}}
+  <tr id="show-{{.ID}}" class="{{if .Record}}selected{{end}} {{if not .OnCalendar}}off{{end}}"
+      data-search="{{lower .Title}} {{lower .DJ}} {{lower .Description}}" data-category="{{lower .Category}}" data-selected="{{.Record}}">
+    <td>
+      <form method="post" action="/shows/{{.ID}}/record" class="toggle-form">
+        <input type="hidden" name="record" value="{{if .Record}}0{{else}}1{{end}}">
+        <button type="submit" class="toggle" aria-pressed="{{.Record}}">{{if .Record}}Recording{{else}}Record{{end}}</button>
+      </form>
+    </td>
+    <td class="title">
+      {{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>{{else}}<strong>{{.Title}}</strong>{{end}}
+      {{if .RecordingNow}} <span class="tag rec">● recording</span>{{end}}
+      {{with .Description}}<details><summary>Description</summary><p>{{.}}</p></details>{{end}}
+    </td>
+    <td>{{.DJ}}</td>
+    <td>{{.Category}}</td>
+    <td class="sched muted">{{.Schedule}}</td>
+    <td class="nowrap">
+      {{if .OnCalendar}}{{when .NextAiring}}{{else}}
+        <span class="muted">Not on this week's schedule</span>
+        {{if .LastSeen.IsZero}}<br><span class="muted">(never seen)</span>{{end}}
+        {{if not .Record}}<br><form method="post" action="/shows/{{.ID}}/delete"><button type="submit" class="link">remove</button></form>{{end}}
+      {{end}}
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+</main>
+<script>
+  // Toggle selections without reloading the page; the forms still work without JS.
+  document.querySelectorAll(".toggle-form").forEach(form => {
+    form.addEventListener("submit", async e => {
+      e.preventDefault();
+      const button = form.querySelector("button"), input = form.querySelector("input[name=record]");
+      button.disabled = true;
+      try {
+        const res = await fetch(form.action, { method: "POST", body: new FormData(form), headers: { Accept: "application/json" } });
+        if (!res.ok) throw new Error(res.statusText);
+        const data = await res.json();
+        const row = form.closest("tr");
+        row.classList.toggle("selected", data.record);
+        row.dataset.selected = data.record;
+        button.setAttribute("aria-pressed", data.record);
+        button.textContent = data.record ? "Recording" : "Record";
+        input.value = data.record ? "0" : "1";
+        document.getElementById("upcoming").innerHTML = data.upcoming;
+        document.getElementById("selected-count").textContent = `(${data.selected} selected)`;
+      } catch (err) {
+        alert("Couldn't update: " + err.message);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+
+  // Client-side filtering.
+  const q = document.getElementById("q"), cat = document.getElementById("category"), only = document.getElementById("only-selected");
+  function filter() {
+    const terms = q.value.toLowerCase().split(/\s+/).filter(Boolean);
+    document.querySelectorAll("tbody tr").forEach(row => {
+      const show = terms.every(t => row.dataset.search.includes(t))
+        && (!cat.value || row.dataset.category === cat.value)
+        && (!only.checked || row.dataset.selected === "true");
+      row.hidden = !show;
+    });
+  }
+  [q, cat, only].forEach(el => el.addEventListener("input", filter));
+</script>
+</body>
+</html>
+
+{{define "upcoming"}}
+{{if .Upcoming}}<ul class="list">
+  {{range .Upcoming}}<li><span class="time">{{when .Start}} – {{clock .End}}</span><span><a href="#show-{{.ShowID}}">{{.Title}}</a>{{with .DJ}} <span class="muted">with {{.}}</span>{{end}}</span></li>{{end}}
+</ul>{{else}}<p class="empty muted">Nothing selected airs in the next week. Pick shows below.</p>{{end}}
+{{end}}

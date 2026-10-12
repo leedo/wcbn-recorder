@@ -85,14 +85,7 @@ func TestParseShowPage(t *testing.T) {
 	}
 }
 
-func TestMatchAndSplit(t *testing.T) {
-	cfg := &Config{Programs: []string{"variety is dead"}}
-	if p, ok := cfg.matches("VARIETY  IS DEAD"); !ok || p != "variety is dead" {
-		t.Error("expected case/space-insensitive match")
-	}
-	if _, ok := cfg.matches("Variety Is Dead Special"); ok {
-		t.Error("unexpected substring match")
-	}
+func TestSplitStreamTitle(t *testing.T) {
 	const title = "Black Magic Woman / Gypsy Queen (Live) by Santana on Open slot with eddienow"
 	track, dj, ours := splitStreamTitle(title, "Open Slot")
 	if track != "Black Magic Woman / Gypsy Queen (Live) by Santana" || dj != "eddienow" || !ours {
