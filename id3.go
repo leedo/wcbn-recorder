@@ -42,9 +42,13 @@ func (t *id3Tag) userText(desc, v string) {
 	}
 }
 
-func (t *id3Tag) comment(v string) {
+func (t *id3Tag) comment(v string) { t.commentDesc("", v) }
+
+// commentDesc adds a COMM frame with a content description, as used by
+// iTunes for values like iTunSMPB.
+func (t *id3Tag) commentDesc(desc, v string) {
 	if v != "" {
-		t.frames.Write(id3Frame("COMM", fmt.Appendf(nil, "%ceng\x00%s", id3UTF8, v)))
+		t.frames.Write(id3Frame("COMM", fmt.Appendf(nil, "%ceng%s\x00%s", id3UTF8, desc, v)))
 	}
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -139,6 +140,7 @@ func (r *recording) writeShowFile(meta showMeta, part, path string) error {
 // segment is the stretch of audio between one stream title change and the next.
 type segment struct {
 	mark             trackMark
+	leadOff          int64 // where a gapless file starts, overlapFrames before startOff
 	startOff, endOff int64
 	startMs, endMs   int64
 }
@@ -151,7 +153,7 @@ func (r *recording) segments() []segment {
 	}
 	var segs []segment
 	for i, m := range marks {
-		s := segment{mark: m, startOff: m.offset, startMs: m.ms, endOff: r.audio.written, endMs: r.audio.durationMs()}
+		s := segment{mark: m, leadOff: m.lead, startOff: m.offset, startMs: m.ms, endOff: r.audio.written, endMs: r.audio.durationMs()}
 		if i+1 < len(marks) {
 			s.endOff, s.endMs = marks[i+1].offset, marks[i+1].ms
 		}
@@ -210,7 +212,27 @@ func (r *recording) writeTracks(meta showMeta, part string, out outputs) error {
 		tag.userText("show_url", meta.URL)
 		tag.userURL("show", meta.URL)
 
-		audio := io.NewSectionReader(src, s.startOff, s.endOff-s.startOff)
+		var audio io.Reader = io.NewSectionReader(src, s.startOff, s.endOff-s.startOff)
+		if r.cfg.Gapless {
+			// Start a couple of frames early, and say how many samples to skip.
+			g := gaplessInfo{bytes: s.endOff - s.leadOff}
+			frames, header, err := scanFrames(src, s.leadOff, s.endOff, s.startOff)
+			if err != nil {
+				return err
+			}
+			lead, _, err := scanFrames(src, s.leadOff, s.startOff, s.startOff)
+			if err != nil {
+				return err
+			}
+			g.frames, g.header, g.lead = frames, header, lead
+			info, err := infoFrame(g)
+			if err != nil {
+				return err
+			}
+			fh, _ := parseFrameHeader(header[:])
+			tag.commentDesc("iTunSMPB", iTunSMPB(g, fh.samples))
+			audio = io.MultiReader(bytes.NewReader(info), io.NewSectionReader(src, s.leadOff, s.endOff-s.leadOff))
+		}
 		if err := writeTagged(filepath.Join(tmp, file), &tag, audio); err != nil {
 			return err
 		}

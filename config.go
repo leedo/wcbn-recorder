@@ -32,6 +32,10 @@ type Config struct {
 	// TrackFiles also writes each song as its own MP3, with a playlist, in a
 	// folder named after the show and date.
 	TrackFiles bool `json:"track_files"`
+	// Gapless makes song files play back seamlessly in players that support
+	// it, by starting each file a couple of frames early and marking those
+	// samples for the player to skip (LAME/Xing "Info" header and iTunSMPB).
+	Gapless bool `json:"gapless"`
 	// Programs is an optional list of show titles to select for recording. It
 	// is imported into the database once; after that, use the web UI.
 	Programs []string `json:"programs"`
@@ -70,6 +74,7 @@ func loadConfig(path string) (*Config, error) {
 		Listen:       "127.0.0.1:8080",
 		ShowFile:     true,
 		TrackFiles:   true,
+		Gapless:      true,
 		Database:     "wcbn-recorder.db",
 	}
 	if err := json.Unmarshal(b, cfg); err != nil {

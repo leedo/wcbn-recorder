@@ -13,8 +13,14 @@ type frameWriter struct {
 	synced     bool
 	samples    int64
 	sampleRate int
-	written    int64 // bytes passed through
+	written    int64   // bytes passed through
+	recent     []int64 // start offsets of the last few frames on this connection
 }
+
+// overlapFrames is how many frames before a song's cut point are repeated at
+// the start of its file, so the decoder has the bit reservoir data and filter
+// history it needs to decode the first real frame correctly.
+const overlapFrames = 2
 
 // maxFrameLen bounds the largest MPEG audio frame (Layer II/III at 448 kbps,
 // 32 kHz, padded is under 2 KB), so we never buffer much while syncing.
@@ -50,6 +56,10 @@ func (f *frameWriter) Write(p []byte) (int, error) {
 		if _, err := f.w.Write(f.buf[:h.length]); err != nil {
 			return 0, err
 		}
+		if len(f.recent) == overlapFrames {
+			f.recent = append(f.recent[:0], f.recent[1:]...)
+		}
+		f.recent = append(f.recent, f.written)
 		f.written += int64(h.length)
 		f.samples += int64(h.samples)
 		f.sampleRate = h.sampleRate
@@ -64,6 +74,16 @@ func (f *frameWriter) Write(p []byte) (int, error) {
 func (f *frameWriter) Reset() {
 	f.buf = f.buf[:0]
 	f.synced = false
+	f.recent = f.recent[:0] // frames from an earlier connection aren't continuous with the next
+}
+
+// overlapStart is where a song starting now should begin its file to include
+// up to overlapFrames earlier frames from the same connection.
+func (f *frameWriter) overlapStart() int64 {
+	if len(f.recent) == 0 {
+		return f.written
+	}
+	return f.recent[0]
 }
 
 // durationMs is the length of audio written so far.

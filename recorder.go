@@ -33,6 +33,7 @@ type Job struct {
 type trackMark struct {
 	ms     int64     // position in the recording
 	offset int64     // byte offset in the audio; always on a frame boundary
+	lead   int64     // offset up to overlapFrames earlier, where a gapless song file starts
 	at     time.Time // when the title changed
 	title  string    // the stream title with " on <show> with <dj>" removed
 }
@@ -239,10 +240,10 @@ func (r *recording) onMetadata(meta string) {
 	if ours && dj != "" {
 		r.dj = dj
 	}
-	mark := trackMark{ms: r.audio.durationMs(), offset: r.audio.written, at: time.Now(), title: track}
+	mark := trackMark{ms: r.audio.durationMs(), offset: r.audio.written, lead: r.audio.overlapStart(), at: time.Now(), title: track}
 	if len(r.tracks) == 0 {
 		// The first title covers the audio from the start of the file.
-		mark.ms, mark.offset = 0, 0
+		mark.ms, mark.offset, mark.lead = 0, 0, 0
 	}
 	r.tracks = append(r.tracks, mark)
 	log.Printf("[%s] now playing: %s", r.job.Event.Title, track)

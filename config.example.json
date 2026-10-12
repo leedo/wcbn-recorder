@@ -2,6 +2,7 @@
   "destination": "/Users/you/Music/WCBN",
   "show_file": true,
   "track_files": true,
+  "gapless": true,
   "listen": "127.0.0.1:8080",
   "database": "wcbn-recorder.db",
   "stream_url": "https://floyd.wcbn.org:8443/wcbn-hd.mp3",

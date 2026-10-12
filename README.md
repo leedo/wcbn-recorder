@@ -122,6 +122,7 @@ to `no`. Then make sure the `wcbn-recorder` user can write there.
 | `destination` | (required) | root folder for recordings |
 | `show_file` | `true` | write the whole show as one MP3 |
 | `track_files` | `true` | write each song as its own MP3, plus a playlist |
+| `gapless` | `true` | make song files play back seamlessly (see Songs) |
 | `listen` | `127.0.0.1:8080` | address of the web UI |
 | `database` | `wcbn-recorder.db` | SQLite file for show details and selections; relative to the working directory |
 | `programs` | none | optional show titles to select; imported into the database once, on first start |
@@ -164,6 +165,27 @@ song can start with the end of the previous one or with the DJ talking. Talk
 between songs usually stays with the song before it. Audio before the first
 title change (pre-roll) goes into the first file, and if the stream sends no
 titles at all, the whole show becomes a single track.
+
+### Gapless playback
+
+Cutting the stream between frames keeps the timing exact, but the first frame
+of a song can't be decoded on its own. MP3 frames borrow bits from the frames
+before them (the "bit reservoir"; WCBN's stream does this in about 99% of
+frames), and the decoder needs a frame of history. Played back to back, plain
+song files would have a ~30 ms dropout at the start of every song.
+
+With `gapless` on (the default), each song file starts two frames (52 ms) before
+its cut point, and a LAME/Xing "Info" frame at the start of the file tells the
+player to skip exactly those samples. The same information is stored as an
+`iTunSMPB` comment for Apple players. In players that support gapless MP3, such
+as foobar2000, Apple Music, mpv and other ffmpeg-based players, and Plexamp,
+consecutive song files then decode to exactly the same samples as the whole
+show; the test suite checks this sample for sample. Players without gapless
+support play the 52 ms overlap, repeating the end of the previous song.
+
+The first song of a recording, and the first after a reconnect, has no earlier
+audio to overlap. Gapless players skip the decoder's own 529-sample (12 ms)
+delay at the start of those files.
 
 Each song file's ID3 tag has the title, artist, the show and date as the album,
 the DJ as album artist, track number, date, genre, and length. A comment says
