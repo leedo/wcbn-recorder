@@ -47,6 +47,7 @@ type showMeta struct {
 	Description string
 	URL         string
 	Comment     string
+	Art         *artwork // nil if the show has no usable image
 }
 
 func (r *recording) showMetadata(ctx context.Context) showMeta {
@@ -63,7 +64,9 @@ func (r *recording) showMetadata(ctx context.Context) showMeta {
 		if r.info, err = fetchShowInfo(ctx, ev.URL); err != nil {
 			log.Printf("couldn't load show details for %q: %v", ev.Title, err)
 		}
+		r.art = showArtwork(ctx, ev.Title, r.info)
 	})
+	m.Art = r.art
 	m.Description = r.info.Description
 	if r.info.URL != "" {
 		m.URL = r.info.URL
@@ -136,6 +139,7 @@ func (r *recording) writeShowFile(meta showMeta, part, path string) error {
 	tag.userText("show_url", meta.URL)
 	tag.userText("source", r.cfg.StreamURL)
 	tag.userURL("show", meta.URL)
+	tag.picture(meta.Art)
 
 	var chs []chapter
 	for _, s := range r.segments() {

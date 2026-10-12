@@ -84,6 +84,17 @@ func (r *recording) songWriter(ctx context.Context) {
 	var playlist []string
 	for seg := range r.songs {
 		meta := r.showMetadata(ctx)
+		if meta.Art != nil {
+			r.coverOnce.Do(func() {
+				err := os.MkdirAll(r.out.trackDir, 0o755)
+				if err == nil {
+					err = meta.Art.writeCover(r.out.trackDir)
+				}
+				if err != nil {
+					log.Printf("writing cover for %q: %v", meta.Title, err)
+				}
+			})
+		}
 		entry, err := r.writeSong(meta, src, seg)
 		if err != nil {
 			r.songErrors++
@@ -134,6 +145,7 @@ func (r *recording) writeSong(meta showMeta, src io.ReaderAt, s segment) ([]stri
 	tag.userText("stream_title", s.mark.title)
 	tag.userText("show_url", meta.URL)
 	tag.userURL("show", meta.URL)
+	tag.picture(meta.Art)
 
 	var audio io.Reader = io.NewSectionReader(src, s.startOff, s.endOff-s.startOff)
 	if r.cfg.Gapless {

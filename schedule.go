@@ -30,12 +30,14 @@ func (e Event) key() string { return fmt.Sprintf("%s|%d", normalize(e.Title), e.
 
 // ShowInfo is the detail shown on a Spinitron show page.
 type ShowInfo struct {
-	Title       string
-	URL         string
-	DJ          string
-	Category    string
-	Schedule    []string // e.g. "Every week on Mon at 7:00 PM"
-	Description string
+	Title        string
+	URL          string
+	DJ           string
+	Category     string
+	Schedule     []string // e.g. "Every week on Mon at 7:00 PM"
+	Description  string
+	Image        string // the show's artwork URL
+	StationImage string // the station logo, a fallback when Image is gone
 }
 
 // The calendar page is a fullcalendar widget configured in an inline script,
@@ -205,6 +207,26 @@ func parseShowPage(data []byte, pageURL string) (ShowInfo, error) {
 	}
 	if n := findFirst(head, func(n *html.Node) bool { return hasClass(n, "description") }); n != nil {
 		info.Description = blockText(n)
+	}
+	// The show's image is in og:image; the station header has the logo.
+	resolve := func(ref string) string {
+		base, err := url.Parse(pageURL)
+		if ref == "" || err != nil {
+			return ""
+		}
+		u, err := base.Parse(ref)
+		if err != nil {
+			return ""
+		}
+		return u.String()
+	}
+	if n := findFirst(doc, func(n *html.Node) bool { return n.Data == "meta" && attr(n, "property") == "og:image" }); n != nil {
+		info.Image = resolve(attr(n, "content"))
+	}
+	if station := findFirst(doc, func(n *html.Node) bool { return hasClass(n, "head") && hasClass(n, "station") }); station != nil {
+		if img := findFirst(station, func(n *html.Node) bool { return n.Data == "img" }); img != nil {
+			info.StationImage = resolve(attr(img, "src"))
+		}
 	}
 	return info, nil
 }

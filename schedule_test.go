@@ -21,8 +21,8 @@ const feedJSON = `[
 {"id":1,"title":"Broken","text":"","start":"2026-10-11T00:00:00-0400","end":"2026-10-11T00:00:00-0400","className":"spin-cal-show","url":"/x"}
 ]`
 
-const showPage = `<html><body>
-<div class="head station"><h1 class="station-title">WCBN-FM Ann Arbor</h1><div class="station-description"><p>Station blurb.</p></div></div>
+const showPage = `<html><head><meta property="og:image" content="https://farm4.staticflickr.com/3896/14733200816_f92c8554a7_m.jpg"></head><body>
+<div class="head station"><div class="image"><img src="/images/Station/22/2263-img_logo.225x225.jpg"></div><h1 class="station-title">WCBN-FM Ann Arbor</h1><div class="station-description"><p>Station blurb.</p></div></div>
 <div class="head playlist"><div class="data">
 <h3 class="show-title"><a href="/WCBN/show/299137/VARIETY-IS-DEAD">VARIETY IS DEAD</a></h3>
 <ul class="timeslot show-schedule"><li>Every  week on Sun at 12:00 AM</li></ul>
@@ -72,15 +72,17 @@ func TestParseShowPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := ShowInfo{
-		Title:       "VARIETY IS DEAD",
-		URL:         "https://spinitron.com/WCBN/show/299137/VARIETY-IS-DEAD",
-		DJ:          "roverie",
-		Category:    "Freeform",
-		Schedule:    []string{"Every week on Sun at 12:00 AM"},
-		Description: "We escape our personalized sonic bubbles.\n\nIf variety is dead,\n\nwe mourn it.",
+		Title:        "VARIETY IS DEAD",
+		URL:          "https://spinitron.com/WCBN/show/299137/VARIETY-IS-DEAD",
+		DJ:           "roverie",
+		Category:     "Freeform",
+		Schedule:     []string{"Every week on Sun at 12:00 AM"},
+		Description:  "We escape our personalized sonic bubbles.\n\nIf variety is dead,\n\nwe mourn it.",
+		Image:        "https://farm4.staticflickr.com/3896/14733200816_f92c8554a7_m.jpg",
+		StationImage: "https://spinitron.com/images/Station/22/2263-img_logo.225x225.jpg",
 	}
 	if info.Title != want.Title || info.URL != want.URL || info.DJ != want.DJ || info.Category != want.Category ||
-		strings.Join(info.Schedule, "|") != strings.Join(want.Schedule, "|") || info.Description != want.Description {
+		strings.Join(info.Schedule, "|") != strings.Join(want.Schedule, "|") || info.Description != want.Description || info.Image != want.Image || info.StationImage != want.StationImage {
 		t.Errorf("got  %+v\nwant %+v", info, want)
 	}
 }

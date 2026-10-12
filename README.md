@@ -91,6 +91,7 @@ Each recording produces:
     02 - <artist> - <title>.mp3
     …
     <show> - YYYY-MM-DD.m3u8       playlist of the songs
+    cover.jpg                      the show's artwork
 ```
 
 The whole-show file is a backup when song files are on, so it's kept hidden
@@ -216,6 +217,16 @@ has no total ("3", not "3/12"), since the number of songs isn't known until the
 show ends. A comment says
 when it aired. Custom tags hold `show`, `dj`, `aired_at`, `stream_title` (the
 raw title from the stream), and `show_url`.
+
+## Artwork
+
+Each show's image from its Spinitron page is embedded as front-cover art in the
+whole-show file and every song file, and saved as `cover.jpg` (or `cover.png`)
+in the show folder, which Plex and most music apps use as album art. The image
+is whatever the show page's `og:image` tag points to, downloaded as is (often a
+small Flickr or Spinitron thumbnail). A few shows link Flickr images that no
+longer exist; those recordings get the WCBN station logo instead. Only JPEG and PNG images are used, and a
+recording goes ahead without art if none can be downloaded.
 
 ## Metadata
 

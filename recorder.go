@@ -72,8 +72,10 @@ type recording struct {
 	songsOnce  sync.Once
 	songErrors int // written only by the song writer
 
-	infoOnce sync.Once
-	info     ShowInfo // from the show's Spinitron page, fetched once
+	infoOnce  sync.Once
+	info      ShowInfo // from the show's Spinitron page, fetched once
+	art       *artwork // the show's image, if any; fetched with info
+	coverOnce sync.Once
 }
 
 // Record streams the live program to disk until job.Until (or ctx is
