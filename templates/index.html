@@ -193,7 +193,7 @@
       {{template "art" (art .Image $.StationLogo "art-sm" true)}}
       <div>
       {{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>{{else}}<strong>{{.Title}}</strong>{{end}}
-      {{if .RecordingNow}} <span class="tag rec">● recording</span>{{end}}
+       <span class="tag rec rec-tag"{{if not .RecordingNow}} hidden{{end}}>● recording</span>
       {{with .Description}}<details><summary>Description</summary><p>{{.}}</p></details>{{end}}
       </div>
       </div>
@@ -345,6 +345,12 @@
       });
       syncListenButtons();
       document.getElementById("upcoming").innerHTML = data.upcoming;
+      document.getElementById("mine").innerHTML = data.mine;
+      const recordingShows = new Set(data.recordingShows.map(String));
+      browse.querySelectorAll("tbody tr").forEach(row => {
+        const tag = row.querySelector(".rec-tag");
+        if (tag) tag.hidden = !recordingShows.has(row.id.replace("show-", ""));
+      });
     } catch { /* server restarting; try again next tick */ }
   }
   setInterval(refreshLive, 5000);

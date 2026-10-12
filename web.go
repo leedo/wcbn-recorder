@@ -89,7 +89,21 @@ func (a *App) handler() http.Handler {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, map[string]any{"live": live.String(), "upcoming": upcoming.String(), "recording": len(data.Recording)})
+		var mine bytes.Buffer
+		if err := tmpl.ExecuteTemplate(&mine, "mine", data); err != nil {
+			httpError(w, err)
+			return
+		}
+		recordingShows := []int64{} // for the ● recording tags in the full list
+		for _, sh := range data.Shows {
+			if sh.RecordingNow {
+				recordingShows = append(recordingShows, sh.ID)
+			}
+		}
+		writeJSON(w, map[string]any{
+			"live": live.String(), "upcoming": upcoming.String(), "mine": mine.String(),
+			"recording": len(data.Recording), "recordingShows": recordingShows,
+		})
 	})
 	// Listen to a recording in progress, from just behind the live edge.
 	mux.HandleFunc("GET /listen/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -227,6 +241,10 @@ func (a *App) pageData(ctx context.Context) (pageData, error) {
 	if a.refreshErr != nil {
 		data.RefreshErr = a.refreshErr.Error()
 	}
+	started := make(map[string]bool, len(a.started)) // airings already recorded or ended
+	for k := range a.started {
+		started[k] = true
+	}
 	a.mu.Unlock()
 
 	// Next airing (or current one) for each show on the calendar.
@@ -237,9 +255,12 @@ func (a *App) pageData(ctx context.Context) (pageData, error) {
 			next[k] = ev.Start
 		}
 	}
+	// Shows being recorded right now; not ones ended early or saving.
 	recordingNow := map[string]bool{}
 	for _, st := range active {
-		recordingNow[normalize(st.Title)] = true
+		if !st.Finishing && !st.Stopped {
+			recordingNow[normalize(st.Title)] = true
+		}
 	}
 	ids := map[string]Show{}
 	categories := map[string]bool{}
@@ -297,7 +318,7 @@ func (a *App) pageData(ctx context.Context) (pageData, error) {
 		data.Recording = append(data.Recording, st)
 	}
 	for _, j := range jobs {
-		if !recordingNow[normalize(j.Event.Title)] && len(data.Upcoming) < 15 {
+		if !started[j.Event.key()] && len(data.Upcoming) < 15 {
 			data.Upcoming = append(data.Upcoming, view(j))
 		}
 	}

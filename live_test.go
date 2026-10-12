@@ -379,3 +379,61 @@ func TestReaddAfterEnd(t *testing.T) {
 	second.Stop()
 	waitFor("the second recording to finish", func() bool { return active() == nil })
 }
+
+// After End recording, the next refresh drops the ● recording tag from Your
+// shows and the full list, and the ended airing doesn't show as upcoming.
+func TestRecordingTagClearsAfterEnd(t *testing.T) {
+	app, srv := testApp(t)
+	ctx := context.Background()
+	now := time.Now()
+	app.mu.Lock()
+	app.events[0].Start, app.events[0].End = now.Add(-time.Minute), now.Add(time.Hour) // Train To Skaville, on now
+	ev := app.events[0]
+	app.mu.Unlock()
+	shows, _ := app.store.Shows(ctx)
+	var id int64
+	for _, sh := range shows {
+		if sh.Title == ev.Title {
+			id = sh.ID
+		}
+	}
+	app.store.SetRecord(ctx, id, true)
+
+	f := newFakeRecording(t, testConfig())
+	f.job = Job{Program: ev.Title, Event: ev, Until: ev.End}
+	f.frames(1, 3)
+	app.mu.Lock()
+	app.started[ev.key()], app.active[ev.key()] = true, f.recording
+	app.mu.Unlock()
+
+	live := func() (mine, upcoming string, tagged []int64) {
+		t.Helper()
+		resp, err := http.Get(srv.URL + "/live")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var out struct {
+			Mine, Upcoming string
+			RecordingShows []int64
+		}
+		json.NewDecoder(resp.Body).Decode(&out)
+		return out.Mine, out.Upcoming, out.RecordingShows
+	}
+	if mine, _, tagged := live(); !strings.Contains(mine, "● recording") || len(tagged) != 1 || tagged[0] != id {
+		t.Fatalf("while recording: tagged %v, mine has tag %v", tagged, strings.Contains(mine, "● recording"))
+	}
+
+	// End recording: Stop marks it stopped right away, while files are saved.
+	f.Stop()
+	mine, upcoming, tagged := live()
+	if strings.Contains(mine, "● recording") || len(tagged) != 0 {
+		t.Errorf("after ending: tagged %v, mine still has tag %v", tagged, strings.Contains(mine, "● recording"))
+	}
+	if strings.Contains(upcoming, ev.Title) {
+		t.Errorf("the ended airing is listed as upcoming:\n%s", upcoming)
+	}
+	if !strings.Contains(mine, ev.Title) {
+		t.Error("the show should still be in Your shows")
+	}
+}
