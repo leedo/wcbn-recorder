@@ -47,7 +47,7 @@ func (f *fakeRecording) frames(fill byte, n int) {
 	for range n {
 		fr := mp3Frame(fill)
 		f.audio = append(f.audio, fr...)
-		f.recording.audio.Write(fr)
+		f.recording.Write(fr) // the locked path the stream uses
 	}
 }
 

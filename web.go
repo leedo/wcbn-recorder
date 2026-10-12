@@ -89,6 +89,23 @@ func (a *App) handler() http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, map[string]any{"live": live.String(), "upcoming": upcoming.String(), "recording": len(data.Recording)})
 	})
+	// Listen to a recording in progress, from just behind the live edge.
+	mux.HandleFunc("GET /listen/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		var rec *recording
+		a.mu.Lock()
+		for _, ar := range a.active {
+			if ar.id == id {
+				rec = ar
+			}
+		}
+		a.mu.Unlock()
+		if rec == nil {
+			http.Error(w, "nothing is being recorded with that id", http.StatusNotFound)
+			return
+		}
+		rec.serveListen(w, r)
+	})
 	mux.HandleFunc("POST /shows/{id}/record", func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil {

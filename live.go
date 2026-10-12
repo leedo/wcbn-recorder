@@ -4,6 +4,7 @@ import "time"
 
 // liveStatus is a snapshot of a recording in progress, for the web UI.
 type liveStatus struct {
+	ID         int64 // for the listen URL
 	Key        string
 	ShowID     int64
 	Title      string
@@ -39,7 +40,7 @@ func (r *recording) status(now time.Time) liveStatus {
 	defer r.mu.Unlock()
 	ev := r.job.Event
 	st := liveStatus{
-		Key: ev.key(), Title: ev.Title, DJ: ev.DJ,
+		ID: r.id, Key: ev.key(), Title: ev.Title, DJ: ev.DJ,
 		Start: ev.Start, End: ev.End, Until: r.job.Until, Started: r.started,
 		RecordedMs: r.audio.durationMs(), Bytes: r.audio.written,
 		Connected: r.connected, Finishing: r.finishing, LastErr: r.lastErr, Reconnects: r.reconnects,

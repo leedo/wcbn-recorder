@@ -101,6 +101,9 @@
   details.songs li .n, details.songs li .at, details.songs li .len { color: var(--muted); }
   details.songs li.current { font-weight: 600; }
   details.songs .saved { color: #3a9d5d; }
+  button.listen { font-weight: 600; padding: 5px 14px; border-color: var(--rec); color: var(--rec); }
+  button.listen[aria-pressed=true] { background: var(--rec); color: #fff; }
+  button.listen:focus-visible { outline: 2px solid var(--rec); outline-offset: 2px; }
   details.songs li.current .len::after { content: " ●"; color: var(--rec); }
 </style>
 </head>
@@ -237,6 +240,46 @@
     }
   });
 
+  // Listening: one audio element for the page, outside the live panel so its
+  // refreshes don't interrupt playback. Stopping disconnects rather than
+  // pausing, so the next Listen picks up at the live edge.
+  const player = new Audio();
+  player.preload = "none";
+  let listening = null, listenState = "";
+  function syncListenButtons() {
+    document.querySelectorAll("#live button.listen").forEach(b => {
+      const on = b.dataset.src === listening;
+      b.setAttribute("aria-pressed", on);
+      b.textContent = !on ? "▶ Listen" : listenState === "playing" ? "■ Stop" : "… Connecting";
+    });
+  }
+  function stopListening() {
+    player.pause();
+    player.removeAttribute("src");
+    player.load();
+    listening = null;
+    syncListenButtons();
+  }
+  function startListening(src) {
+    listening = src;
+    listenState = "connecting";
+    player.src = src + "?t=" + Date.now(); // never reuse a cached response
+    player.play().catch(err => {
+      if (err.name !== "AbortError") alert("Couldn't play the stream: " + err.message);
+      stopListening();
+    });
+    syncListenButtons();
+  }
+  player.addEventListener("playing", () => { listenState = "playing"; syncListenButtons(); });
+  player.addEventListener("waiting", () => { listenState = "connecting"; syncListenButtons(); });
+  player.addEventListener("ended", stopListening);   // the recording finished
+  player.addEventListener("error", () => { if (listening) stopListening(); });
+  document.addEventListener("click", e => {
+    const b = e.target.closest("#live button.listen");
+    if (!b) return;
+    if (b.dataset.src === listening) stopListening(); else startListening(b.dataset.src);
+  });
+
   // Keep the live recording panel current, preserving which song lists are open.
   const live = document.getElementById("live");
   async function refreshLive() {
@@ -250,6 +293,7 @@
       live.querySelectorAll("[data-key]").forEach(card => {
         if (open.has(card.dataset.key)) card.querySelector("details")?.setAttribute("open", "");
       });
+      syncListenButtons();
       document.getElementById("upcoming").innerHTML = data.upcoming;
     } catch { /* server restarting; try again next tick */ }
   }
@@ -320,6 +364,7 @@
     <h2>{{if .ShowID}}<a href="#mine-{{.ShowID}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
     {{with .DJ}}<span class="muted">with {{.}}</span>{{end}}
     <span class="slot muted">{{clock .Start}} – {{clock .End}}</span>
+    {{if not .Finishing}}<button type="button" class="listen" data-src="/listen/{{.ID}}" aria-pressed="false" aria-label="Listen to {{.Title}}">▶ Listen</button>{{end}}
   </div>
   <div class="progress" role="progressbar" aria-label="Show progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Progress}}"><div style="width: {{.Progress}}%"></div></div>
   <div class="stats muted">

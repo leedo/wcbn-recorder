@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -127,5 +129,74 @@ func TestStopAtWallTime(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("not cancelled")
+	}
+}
+
+func TestWebListen(t *testing.T) {
+	app, srv := testApp(t)
+	f := newFakeRecording(t, testConfig())
+	f.id = 42
+	f.title("Pressure Drop by Toots & the Maytals")
+	f.frames(1, 400) // ~10.4 s of audio
+	app.mu.Lock()
+	app.active[f.job.Event.key()] = f.recording
+	app.mu.Unlock()
+
+	if resp, _ := http.Get(srv.URL + "/listen/999"); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("unknown recording: %s", resp.Status)
+	}
+
+	resp, err := http.Get(srv.URL + "/listen/42")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.Header.Get("Content-Type") != "audio/mpeg" || resp.Header.Get("Cache-Control") != "no-store" {
+		t.Errorf("headers: %v", resp.Header)
+	}
+
+	frameLen := len(mp3Frame(0))
+	readN := func(n int) []byte {
+		t.Helper()
+		buf := make([]byte, n)
+		done := make(chan error, 1)
+		go func() { _, err := io.ReadFull(resp.Body, buf); done <- err }()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("reading %d bytes: %v", n, err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timed out reading %d bytes", n)
+		}
+		return buf
+	}
+
+	// It starts about 5 s back from the live edge, on a frame boundary.
+	lead := len(f.audio) * 5000 / int(f.recording.audio.durationMs())
+	lead = (lead/frameLen + 1) * frameLen // first frame boundary at or after 5 s back
+	first := readN(lead - frameLen)
+	if _, ok := parseFrameHeader(first); !ok {
+		t.Fatalf("stream doesn't start on a frame: % x", first[:4])
+	}
+	start := len(f.audio) - (lead - frameLen)
+	if !bytes.Equal(first, f.audio[start:]) {
+		t.Errorf("first chunk isn't the last %d bytes of the recording", len(first))
+	}
+
+	// New audio follows as it's recorded.
+	f.frames(2, 10)
+	if got := readN(10 * frameLen); !bytes.Equal(got, f.audio[len(f.audio)-10*frameLen:]) {
+		t.Error("new frames didn't follow")
+	}
+
+	// When recording stops, the stream ends after the last bytes.
+	f.frames(3, 5)
+	f.mu.Lock()
+	f.finishing = true
+	f.mu.Unlock()
+	rest, err := io.ReadAll(resp.Body)
+	if err != nil || !bytes.Equal(rest, f.audio[len(f.audio)-5*frameLen:]) {
+		t.Errorf("tail: %d bytes, err %v", len(rest), err)
 	}
 }

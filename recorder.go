@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -38,7 +39,11 @@ type trackMark struct {
 	title  string    // the stream title with " on <show> with <dj>" removed
 }
 
+// recordingIDs numbers recordings in progress, for listen URLs.
+var recordingIDs atomic.Int64
+
 type recording struct {
+	id      int64
 	cfg     *Config
 	job     Job
 	out     outputs
@@ -99,7 +104,7 @@ func startRecording(cfg *Config, job Job) (*recording, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &recording{cfg: cfg, job: job, out: out, part: part, file: f, started: time.Now(), audio: &frameWriter{w: f}}, nil
+	return &recording{id: recordingIDs.Add(1), cfg: cfg, job: job, out: out, part: part, file: f, started: time.Now(), audio: &frameWriter{w: f}}, nil
 }
 
 // Run records until job.Until (or ctx is cancelled), reconnecting as needed,

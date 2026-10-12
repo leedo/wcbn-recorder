@@ -47,6 +47,12 @@ While a show is recording, a live panel sits at the top of the page. It shows:
 - **songs recorded so far:** an expandable list in air order, numbered the same
   way as the song files
 
+**▶ Listen** plays the show from the recording itself: it starts about 5
+seconds behind live and follows the audio as it's recorded, so you hear exactly
+what's being saved. It doesn't open another connection to WCBN, and it works
+wherever the UI does, including over an SSH tunnel. **■ Stop** disconnects, and
+listening again picks up at the live edge.
+
 The panel refreshes every 5 seconds while the page is visible, and right after
 you select a show. An expanded song list stays open across refreshes.
 
