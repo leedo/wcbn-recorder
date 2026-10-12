@@ -45,8 +45,9 @@ type pageData struct {
 	Mine        []showView // shows selected for recording, soonest first
 	Categories  []string
 	Selected    int
-	StationLogo string // fallback artwork
-	Browse      bool   // show the full list (search + table) on load
+	StationLogo string     // fallback artwork
+	Browse      bool       // show the full list (search + table) on load
+	OnAir       *onAirView // what's on, when nothing is recording
 }
 
 func (a *App) handler() http.Handler {
@@ -105,6 +106,8 @@ func (a *App) handler() http.Handler {
 			"recording": len(data.Recording), "recordingShows": recordingShows,
 		})
 	})
+	// Listen to the station live, relayed through the recorder.
+	mux.HandleFunc("GET /listen/live", a.serveLiveStream)
 	// Listen to a recording in progress, from just behind the live edge.
 	mux.HandleFunc("GET /listen/{id}", func(w http.ResponseWriter, r *http.Request) {
 		rec := a.activeRecording(r.PathValue("id"))
@@ -147,12 +150,17 @@ func (a *App) handler() http.Handler {
 				a.allowRestart(sh.Key)
 			}
 		}
-		poke(a.wake) // start right away if the show is on now
+		if record {
+			a.startNow() // start right away if the show is on now
+		}
 		if !wantsJSON(r) {
 			// Without JS, go back to where the button was pressed.
 			target := "/#your-shows"
-			if r.FormValue("from") == "add" {
+			switch r.FormValue("from") {
+			case "add":
 				target = fmt.Sprintf("/?add=1#show-%d", id)
+			case "onair":
+				target = "/"
 			}
 			http.Redirect(w, r, target, http.StatusSeeOther)
 			return
@@ -322,7 +330,35 @@ func (a *App) pageData(ctx context.Context) (pageData, error) {
 			data.Upcoming = append(data.Upcoming, view(j))
 		}
 	}
+	if len(data.Recording) == 0 {
+		data.OnAir = a.onAir(ctx, events, ids, now)
+	}
 	return data, nil
+}
+
+// onAir describes the program on the air now and its current song.
+func (a *App) onAir(ctx context.Context, events []Event, shows map[string]Show, now time.Time) *onAirView {
+	v := &onAirView{Title: stationName}
+	ev, ok := currentEvent(events, now)
+	if ok {
+		sh := shows[normalize(ev.Title)]
+		v.ShowID, v.Title, v.DJ, v.Image, v.Selected = sh.ID, ev.Title, ev.DJ, sh.Image, sh.Record
+		v.Start, v.End = ev.Start, ev.End
+		if v.DJ == "" {
+			v.DJ = sh.DJ
+		}
+		if slot := ev.End.Sub(ev.Start); slot > 0 {
+			v.Progress = int(min(max(now.Sub(ev.Start)*100/slot, 0), 100))
+		}
+	}
+	if title := a.stationTitle(ctx); title != "" {
+		track, dj, _ := splitStreamTitle(title, ev.Title)
+		v.Song, v.Artist = splitSong(track)
+		if v.DJ == "" {
+			v.DJ = dj
+		}
+	}
+	return v
 }
 
 // scheduleSlotRe matches Spinitron schedule lines such as

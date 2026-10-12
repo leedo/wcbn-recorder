@@ -115,6 +115,9 @@
   button.listen[aria-pressed=true] { background: var(--rec); color: #fff; }
   button.listen:focus-visible { outline: 2px solid var(--rec); outline-offset: 2px; }
   button.end-rec { padding: 5px 12px; }
+  .live-card.onair { border-color: var(--line); box-shadow: none; }
+  .live-card.onair .progress div { background: var(--muted); }
+  button.record-now { font-weight: 600; padding: 5px 14px; background: var(--accent); border-color: var(--accent); color: #fff; }
   details.songs li.current .len::after { content: " ●"; color: var(--rec); }
 </style>
 <script>
@@ -411,6 +414,40 @@
 </html>
 
 {{define "live"}}
+{{if not .Recording}}{{with .OnAir}}
+<section class="card live-card onair" data-key="onair">
+  <div class="live-body">
+  {{template "art" (art .Image $.StationLogo "art-lg" false)}}
+  <div class="live-main">
+  <div class="live-head">
+    <span class="badge">ON AIR</span>
+    <h2>{{if .ShowID}}<a href="/?add=1#show-{{.ShowID}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
+    {{with .DJ}}<span class="muted">with {{.}}</span>{{end}}
+    {{if not .Start.IsZero}}<span class="slot muted">{{clock .Start}} – {{clock .End}}</span>{{end}}
+    <button type="button" class="listen" data-src="/listen/live" aria-pressed="false" aria-label="Listen to WCBN live">▶ Listen</button>
+    {{if .ShowID}}
+    <form method="post" action="/shows/{{.ShowID}}/record" class="toggle-form" data-id="{{.ShowID}}">
+      <input type="hidden" name="record" value="1">
+      <input type="hidden" name="from" value="onair">
+      <button type="submit" class="record-now">{{if .Selected}}● Record now{{else}}+ Record this show{{end}}</button>
+    </form>
+    {{end}}
+  </div>
+  {{if not .Start.IsZero}}<div class="progress" role="progressbar" aria-label="Show progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Progress}}"><div style="width: {{.Progress}}%"></div></div>{{end}}
+  <div class="stats muted">Not recording{{if .Selected}} · this show is in Your shows{{end}}</div>
+  {{if .Song}}
+  <div class="now-playing">
+    <span class="label">Now playing</span>
+    <span class="song">{{.Song}}</span>
+    {{with .Artist}}<span class="artist">{{.}}</span>{{end}}
+  </div>
+  {{else}}
+  <div class="now-playing"><span class="meta">No song information from the station right now.</span></div>
+  {{end}}
+  </div>
+  </div>
+</section>
+{{end}}{{end}}
 {{range .Recording}}
 <section class="card live-card" data-key="{{.Key}}">
   <div class="live-body">

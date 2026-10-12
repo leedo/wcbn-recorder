@@ -28,6 +28,12 @@ type App struct {
 	refreshErr  error
 	started     map[string]bool
 	active      map[string]*recording
+	runCtx      context.Context // the scheduler's context, once run has started
+
+	// The station's current stream title, for the "On air" panel; cached.
+	titleMu sync.Mutex
+	title   string
+	titleAt time.Time
 
 	wake           chan struct{} // re-evaluate selections now
 	refreshNow     chan struct{} // re-fetch the schedule now
@@ -57,6 +63,9 @@ func poke(c chan struct{}) {
 // window (with pre/post-roll) is open. It returns once ctx is cancelled and
 // in-progress recordings have been finalized.
 func (a *App) run(ctx context.Context) {
+	a.mu.Lock()
+	a.runCtx = ctx
+	a.mu.Unlock()
 	nextRefresh := time.Now()
 	for {
 		now := time.Now()
@@ -123,6 +132,19 @@ func (a *App) startDue(ctx context.Context, now time.Time) time.Duration {
 		}()
 	}
 	return wake
+}
+
+// startNow starts any recording that's due immediately, rather than waiting
+// for the scheduler to wake, so the page shows it right away.
+func (a *App) startNow() {
+	a.mu.Lock()
+	ctx := a.runCtx
+	a.mu.Unlock()
+	if ctx == nil {
+		poke(a.wake)
+		return
+	}
+	a.startDue(ctx, time.Now())
 }
 
 // allowRestart forgets which airings of a show have been recorded, except

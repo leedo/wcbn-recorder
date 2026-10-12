@@ -36,6 +36,17 @@ puts selected shows first. The sort is remembered, and links can set it with
 Selecting a show that is on the air starts recording right away. Removing a show
 that is being recorded lets that recording finish.
 
+When nothing is recording, the top of the page shows what's **on air**: the
+current program from the schedule, with its artwork, DJ, time slot and progress,
+and the song playing now (read from the station's Icecast status page, at most
+every 10 seconds). **+ Record this show** selects the program and starts
+recording it immediately (it reads **● Record now** if the show is already
+selected, for example after ending a recording). **▶ Listen** plays the station
+live, relayed through the recorder like recordings are, so it works over an SSH
+tunnel and isn't affected by the station's incomplete certificate chain. Live
+listening takes about 5 seconds to start in Chrome: the station sends only
+about 1.6 seconds of audio up front, and Chrome waits for more before playing.
+
 While a show is recording, a live panel sits at the top of the page. It shows:
 
 - **status:** REC, RECONNECTING (with the last error), or SAVING while the files
