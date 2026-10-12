@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -101,5 +102,22 @@ func TestFormatDuration(t *testing.T) {
 		if got := formatDuration(ms); got != want {
 			t.Errorf("formatDuration(%d) = %q, want %q", ms, got, want)
 		}
+	}
+}
+
+func TestStopAtWallTime(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	// A deadline that has already passed on the wall clock is enforced within
+	// a tick, even though no monotonic timer is involved.
+	start := time.Now()
+	go stopAtWallTime(ctx, time.Now().Round(0).Add(-time.Second), cancel)
+	select {
+	case <-ctx.Done():
+		if d := time.Since(start); d > 3*time.Second {
+			t.Errorf("took %s", d)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("not cancelled")
 	}
 }

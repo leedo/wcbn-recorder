@@ -98,6 +98,7 @@ func (r *recording) Run(ctx context.Context) error {
 	log.Printf("recording %q until %s -> %s", job.Event.Title, job.Until.In(r.cfg.location).Format(time.Kitchen), out.trackDir)
 	recCtx, cancel := context.WithDeadline(ctx, job.Until)
 	defer cancel()
+	go stopAtWallTime(recCtx, job.Until, cancel)
 	backoff := time.Second
 	for recCtx.Err() == nil {
 		before := r.bytesWritten()
@@ -141,6 +142,26 @@ func (r *recording) Run(ctx context.Context) error {
 	}
 	log.Printf("finished %q: %s (%.1f MB, %d tracks)", job.Event.Title, out.trackDir, float64(r.audio.written)/1e6, len(r.tracks))
 	return nil
+}
+
+// stopAtWallTime cancels once the wall clock passes until. Go timers (and so
+// context deadlines) can stop counting while the machine sleeps, which would
+// let a recording run past its stop time by however long it slept.
+func stopAtWallTime(ctx context.Context, until time.Time, cancel func()) {
+	until = until.Round(0) // compare wall clock, not monotonic time
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-t.C:
+			if !now.Round(0).Before(until) {
+				cancel()
+				return
+			}
+		}
+	}
 }
 
 func (r *recording) bytesWritten() int64 {
