@@ -58,6 +58,9 @@ func TestWebToggle(t *testing.T) {
 	if strings.Contains(page, "<script>alert(1)</script>") {
 		t.Error("show title was not escaped")
 	}
+	if !strings.Contains(page, `<td class="title" data-sort="train to skaville">`) || !strings.Contains(page, `class="sort" data-col="5" data-type="number"`) {
+		t.Error("missing sort attributes")
+	}
 
 	shows, _ := app.store.Shows(context.Background())
 	var id string
@@ -126,5 +129,26 @@ func TestWebRejectsCrossOrigin(t *testing.T) {
 	}
 	if sel, _ := app.store.Selected(context.Background()); len(sel) != 0 {
 		t.Error("cross-site post changed selections")
+	}
+}
+
+func TestScheduleSortKey(t *testing.T) {
+	const day = 24 * 60
+	for _, tc := range []struct {
+		in   string
+		want int
+	}{
+		{"Every week on Mon at 7:00 PM", 0*day + 19*60},
+		{"Every  week on Tue at 11:00 AM", 1*day + 11*60},
+		{"Every week on Sun at 12:00 AM", 6 * day},
+		{"Every week on Sat at 12:30 PM", 5*day + 12*60 + 30},
+		{"Every week on Mon, Tue, Wed, Thu at 6:00 PM", 18 * 60},
+		{"Every week on Sun at 1:00 AM; Every week on Mon at 4:00 AM", 4 * 60}, // earliest slot wins
+		{"", -1},
+		{"Every other week", -1},
+	} {
+		if got := scheduleSortKey(tc.in); got != tc.want {
+			t.Errorf("scheduleSortKey(%q) = %d, want %d", tc.in, got, tc.want)
+		}
 	}
 }

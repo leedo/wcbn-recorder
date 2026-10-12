@@ -38,7 +38,14 @@
   input[type=search] { flex: 1; min-width: 220px; }
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 9px 12px; border-top: 1px solid var(--line); vertical-align: top; }
-  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border-top: 0; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border-top: 0; white-space: nowrap; }
+  button.sort { all: unset; cursor: pointer; }
+  button.sort:hover, button.sort:focus-visible { color: var(--fg); }
+  button.sort:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  button.sort::after { content: "↕"; margin-left: 4px; opacity: .35; }
+  th[aria-sort=ascending] button.sort, th[aria-sort=descending] button.sort { color: var(--fg); }
+  th[aria-sort=ascending] button.sort::after { content: "↑"; opacity: 1; }
+  th[aria-sort=descending] button.sort::after { content: "↓"; opacity: 1; }
   tr.selected { background: var(--accent-bg); }
   tr.off td:not(:first-child) { opacity: .6; }
   td.title { min-width: 220px; }
@@ -90,26 +97,33 @@
 </div>
 <div class="card">
 <table>
-  <thead><tr><th>Record</th><th>Show</th><th>DJ</th><th>Category</th><th>Schedule</th><th>Next airing</th></tr></thead>
+  <thead><tr>
+    <th aria-sort="none"><button type="button" class="sort" data-col="0" data-type="number" data-first="desc">Record</button></th>
+    <th aria-sort="ascending"><button type="button" class="sort" data-col="1">Show</button></th>
+    <th aria-sort="none"><button type="button" class="sort" data-col="2">DJ</button></th>
+    <th aria-sort="none"><button type="button" class="sort" data-col="3">Category</button></th>
+    <th aria-sort="none"><button type="button" class="sort" data-col="4" data-type="number">Schedule</button></th>
+    <th aria-sort="none"><button type="button" class="sort" data-col="5" data-type="number">Next airing</button></th>
+  </tr></thead>
   <tbody>
   {{range .Shows}}
   <tr id="show-{{.ID}}" class="{{if .Record}}selected{{end}} {{if not .OnCalendar}}off{{end}}"
       data-search="{{lower .Title}} {{lower .DJ}} {{lower .Description}}" data-category="{{lower .Category}}" data-selected="{{.Record}}">
-    <td>
+    <td data-sort="{{if .Record}}1{{else}}0{{end}}">
       <form method="post" action="/shows/{{.ID}}/record" class="toggle-form">
         <input type="hidden" name="record" value="{{if .Record}}0{{else}}1{{end}}">
         <button type="submit" class="toggle" aria-pressed="{{.Record}}">{{if .Record}}Recording{{else}}Record{{end}}</button>
       </form>
     </td>
-    <td class="title">
+    <td class="title" data-sort="{{lower .Title}}">
       {{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>{{else}}<strong>{{.Title}}</strong>{{end}}
       {{if .RecordingNow}} <span class="tag rec">● recording</span>{{end}}
       {{with .Description}}<details><summary>Description</summary><p>{{.}}</p></details>{{end}}
     </td>
-    <td>{{.DJ}}</td>
-    <td>{{.Category}}</td>
-    <td class="sched muted">{{.Schedule}}</td>
-    <td class="nowrap">
+    <td data-sort="{{lower .DJ}}">{{.DJ}}</td>
+    <td data-sort="{{lower .Category}}">{{.Category}}</td>
+    <td class="sched muted" data-sort="{{if ge .ScheduleKey 0}}{{.ScheduleKey}}{{end}}">{{.Schedule}}</td>
+    <td class="nowrap" data-sort="{{if .OnCalendar}}{{.NextAiring.Unix}}{{end}}">
       {{if .OnCalendar}}{{when .NextAiring}}{{else}}
         <span class="muted">Not on this week's schedule</span>
         {{if .LastSeen.IsZero}}<br><span class="muted">(never seen)</span>{{end}}
@@ -136,6 +150,7 @@
         const row = form.closest("tr");
         row.classList.toggle("selected", data.record);
         row.dataset.selected = data.record;
+        row.cells[0].dataset.sort = data.record ? "1" : "0";
         button.setAttribute("aria-pressed", data.record);
         button.textContent = data.record ? "Recording" : "Record";
         input.value = data.record ? "0" : "1";
@@ -161,6 +176,45 @@
     });
   }
   [q, cat, only].forEach(el => el.addEventListener("input", filter));
+
+  // Column sorting. Cells carry a data-sort value; empty values always sort
+  // last, and ties fall back to the show title. The choice is remembered.
+  const tbody = document.querySelector("tbody");
+  const headers = [...document.querySelectorAll("th")];
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+  function sortBy(col, dir) {
+    const button = headers[col].querySelector("button.sort");
+    const numeric = button.dataset.type === "number";
+    const sign = dir === "desc" ? -1 : 1;
+    const value = row => row.cells[col].dataset.sort ?? "";
+    const rows = [...tbody.rows].sort((a, b) => {
+      const x = value(a), y = value(b);
+      if (x === "" || y === "") {
+        if (x !== y) return x === "" ? 1 : -1;
+      } else {
+        const c = numeric ? Number(x) - Number(y) : collator.compare(x, y);
+        if (c !== 0) return sign * c;
+      }
+      return collator.compare(a.cells[1].dataset.sort, b.cells[1].dataset.sort);
+    });
+    tbody.append(...rows);
+    headers.forEach((th, i) => th.setAttribute("aria-sort", i === col ? (dir === "desc" ? "descending" : "ascending") : "none"));
+    localStorage.setItem("wcbn-sort", JSON.stringify({ col, dir }));
+  }
+  headers.forEach((th, col) => {
+    const button = th.querySelector("button.sort");
+    button.addEventListener("click", () => {
+      const current = th.getAttribute("aria-sort");
+      const dir = current === "none" ? (button.dataset.first || "asc") : current === "ascending" ? "desc" : "asc";
+      sortBy(col, dir);
+    });
+  });
+  // Restore the last sort (?sort=<column>&dir=asc|desc overrides it, for links).
+  const params = new URLSearchParams(location.search);
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem("wcbn-sort")); } catch {}
+  if (params.has("sort")) saved = { col: Number(params.get("sort")), dir: params.get("dir") === "desc" ? "desc" : "asc" };
+  if (saved && headers[saved.col]) sortBy(saved.col, saved.dir);
 </script>
 </body>
 </html>

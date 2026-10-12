@@ -22,7 +22,11 @@ cp config.example.json config.json   # set destination
 
 The UI lists every show on the calendar with its DJ, category, weekly
 schedule, next airing, and description. Click **Record** to select a show, and
-use search, the category filter and "Selected only" to narrow the list. Above
+use search, the category filter and "Selected only" to narrow the list.
+Click a column header to sort by it, and click again to reverse. "Schedule"
+sorts by weekly time slot, Monday first; "Next airing" sorts by date; "Record"
+puts selected shows first. The sort is remembered, and links can set it with
+`?sort=<column number>&dir=asc|desc` (columns count from 0). Above
 the list are the recordings in progress and the selected shows coming up in the
 next week. Selecting a show that is on the air starts recording right away.
 Unselecting a show that is being recorded lets that recording finish.
