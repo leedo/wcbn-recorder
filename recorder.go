@@ -95,11 +95,7 @@ func startRecording(cfg *Config, job Job) (*recording, error) {
 	}
 	date := job.Event.Start.In(cfg.location)
 	base := uniqueBase(dir, sanitize(fmt.Sprintf("%s - %s", job.Event.Title, date.Format("2006-01-02"))), date.Format("1504"))
-	out := outputs{
-		base:     base,
-		showFile: filepath.Join(dir, base+".mp3"),
-		trackDir: filepath.Join(dir, base),
-	}
+	out := outputPaths(cfg, dir, base)
 	part := filepath.Join(dir, "."+base+".mp3.part")
 
 	f, err := os.Create(part)
@@ -162,6 +158,9 @@ func (r *recording) Run(ctx context.Context) error {
 	// Finalize even if we were interrupted by shutdown so partial shows keep their tags.
 	if err := r.finalize(context.WithoutCancel(ctx), r.part, out); err != nil {
 		log.Printf("writing output failed (%v); keeping untagged audio as %s", err, out.showFile)
+		if err := os.MkdirAll(filepath.Dir(out.showFile), 0o755); err != nil {
+			return err
+		}
 		if err := os.Rename(r.part, out.showFile); err != nil {
 			return err
 		}

@@ -32,12 +32,8 @@ func newFakeRecording(t *testing.T, cfg *Config) *fakeRecording {
 		Start: start, End: start.Add(time.Hour),
 	}}
 	cfg.Destination = dir
-	base := "Train To Skaville - 2026-10-13"
-	rec := &recording{cfg: cfg, job: job, part: part, file: f, audio: &frameWriter{w: f}, out: outputs{
-		base:     base,
-		showFile: filepath.Join(dir, base+".mp3"),
-		trackDir: filepath.Join(dir, base),
-	}}
+	rec := &recording{cfg: cfg, job: job, part: part, file: f, audio: &frameWriter{w: f},
+		out: outputPaths(cfg, dir, "Train To Skaville - 2026-10-13")}
 	rec.startSongWriter(t.Context())
 	t.Cleanup(rec.stopSongWriter)
 	return &fakeRecording{recording: rec, part: part}
@@ -110,7 +106,14 @@ func TestWriteTracks(t *testing.T) {
 		t.Error("part file was not removed")
 	}
 
-	// The whole show keeps every frame.
+	// The whole show keeps every frame, hidden in the song folder; nothing is
+	// left next to the folder.
+	if out.showFile != filepath.Join(out.trackDir, ".Train To Skaville - 2026-10-13.mp3") {
+		t.Errorf("show file at %s", out.showFile)
+	}
+	if left, _ := filepath.Glob(filepath.Join(f.cfg.Destination, "*.mp3")); len(left) != 0 {
+		t.Errorf("files left next to the folder: %v", left)
+	}
 	if _, audio := readTag(t, out.showFile); !bytes.Equal(audio, f.audio) {
 		t.Errorf("show file audio: %d bytes, want %d", len(audio), len(f.audio))
 	}
@@ -121,6 +124,7 @@ func TestWriteTracks(t *testing.T) {
 		names = append(names, e.Name())
 	}
 	wantNames := []string{
+		".Train To Skaville - 2026-10-13.mp3", // the whole show, hidden alongside the songs
 		"01 - Toots & the Maytals - Pressure Drop.mp3",
 		"02 - The Specials - A Message to You, Rudy.mp3", // "Stand by Me" had no audio
 		"03 - WCBN station ID.mp3",
@@ -132,7 +136,7 @@ func TestWriteTracks(t *testing.T) {
 
 	frameLen := len(mp3Frame(0))
 	wantAudio := [][]byte{f.audio[:3*frameLen], f.audio[3*frameLen : 5*frameLen], f.audio[5*frameLen:]}
-	for i, name := range wantNames[:3] {
+	for i, name := range wantNames[1:4] {
 		tags, audio := readTag(t, filepath.Join(out.trackDir, name))
 		if !bytes.Equal(audio, wantAudio[i]) {
 			t.Errorf("%s: %d audio bytes, want %d", name, len(audio), len(wantAudio[i]))
@@ -149,7 +153,7 @@ func TestWriteTracks(t *testing.T) {
 		}
 	}
 
-	m3u, _ := os.ReadFile(filepath.Join(out.trackDir, wantNames[3]))
+	m3u, _ := os.ReadFile(filepath.Join(out.trackDir, wantNames[4]))
 	wantM3U := "#EXTM3U\n#PLAYLIST:Train To Skaville (2026-10-13)\n" +
 		"#EXTINF:0,Toots & the Maytals - Pressure Drop\n01 - Toots & the Maytals - Pressure Drop.mp3\n" +
 		"#EXTINF:0,The Specials - A Message to You, Rudy\n02 - The Specials - A Message to You, Rudy.mp3\n" +
@@ -229,5 +233,17 @@ func waitForFiles(t *testing.T, dir string, names ...string) {
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
+	}
+}
+
+func TestOutputPaths(t *testing.T) {
+	cfg := &Config{TrackFiles: true}
+	if out := outputPaths(cfg, "/r/Club H", "Club H - 2026-10-13"); out.showFile != "/r/Club H/Club H - 2026-10-13/.Club H - 2026-10-13.mp3" ||
+		out.trackDir != "/r/Club H/Club H - 2026-10-13" {
+		t.Errorf("with song files: %+v", out)
+	}
+	cfg.TrackFiles = false
+	if out := outputPaths(cfg, "/r/Club H", "Club H - 2026-10-13"); out.showFile != "/r/Club H/Club H - 2026-10-13.mp3" {
+		t.Errorf("without song files: %+v", out)
 	}
 }

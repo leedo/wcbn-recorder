@@ -124,6 +124,13 @@ func (a *App) handler() http.Handler {
 			httpError(w, err)
 			return
 		}
+		if record {
+			// Selecting a show records its current airing, even if an earlier
+			// recording of this airing was ended.
+			if sh, err := a.store.Show(r.Context(), id); err == nil {
+				a.allowRestart(sh.Key)
+			}
+		}
 		poke(a.wake) // start right away if the show is on now
 		if !wantsJSON(r) {
 			// Without JS, go back to where the button was pressed.

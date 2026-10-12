@@ -56,8 +56,11 @@ disconnects, and listening again picks up at the live edge.
 **End recording** stops the recording now, after asking to confirm. Everything
 recorded so far is saved as usual (whole-show file, songs and playlist), and the
 show stays selected, so its next airing is recorded normally. It isn't started
-again during the current airing, unless the recorder itself is restarted while
-the show is still on.
+again during the current airing by itself. To record the rest of the airing
+after all, remove the show and add it back; the new recording gets the show's
+start time added to its name (e.g. `<show> - YYYY-MM-DD 1500`), so the earlier
+one is kept. Restarting the recorder while the show is on also starts a new
+recording.
 
 The panel refreshes every 5 seconds while the page is visible, and right after
 you select a show. An expanded song list stays open across refreshes.
@@ -82,13 +85,19 @@ Each recording produces:
 
 ```
 <destination>/<program>/
-  <show> - YYYY-MM-DD.mp3          the whole show, with a chapter per song
   <show> - YYYY-MM-DD/             one file per song, in air order
+    .<show> - YYYY-MM-DD.mp3       the whole show, with a chapter per song (hidden backup)
     01 - <artist> - <title>.mp3
     02 - <artist> - <title>.mp3
     …
     <show> - YYYY-MM-DD.m3u8       playlist of the songs
 ```
+
+The whole-show file is a backup when song files are on, so it's kept hidden
+(a dotfile) inside the song folder, where music libraries such as Plex ignore
+it; `ls -a` or your file manager's "show hidden files" reveals it. With
+`track_files` off, the whole show is the only output and is written visibly
+instead, as `<destination>/<program>/<show> - YYYY-MM-DD.mp3`.
 
 If a recording with that name already exists, the start time is appended
 (e.g. `<show> - YYYY-MM-DD 1900`). Set `show_file` or `track_files` to `false`
@@ -133,7 +142,7 @@ to `no`. Then make sure the `wcbn-recorder` user can write there.
 | key | default | notes |
 |---|---|---|
 | `destination` | (required) | root folder for recordings |
-| `show_file` | `true` | write the whole show as one MP3 |
+| `show_file` | `true` | write the whole show as one MP3 (hidden in the song folder when `track_files` is on) |
 | `track_files` | `true` | write each song as its own MP3, plus a playlist |
 | `gapless` | `true` | make song files play back seamlessly (see Songs) |
 | `listen` | `127.0.0.1:8080` | address of the web UI |

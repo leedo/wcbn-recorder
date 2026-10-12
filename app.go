@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -68,40 +69,7 @@ func (a *App) run(ctx context.Context) {
 		}
 
 		// Wake for whichever comes first: a refresh, the next show, or maxSleep.
-		wake := min(time.Until(nextRefresh), maxSleep)
-		jobs, err := a.upcoming(ctx, now)
-		if err != nil {
-			log.Printf("loading selections: %v", err)
-		}
-		a.mu.Lock()
-		for _, job := range jobs {
-			key := job.Event.key()
-			if a.started[key] {
-				continue
-			}
-			if begin := job.Event.Start.Add(-a.cfg.PreRoll.Duration); now.Before(begin) {
-				wake = min(wake, begin.Sub(now))
-				continue
-			}
-			a.started[key] = true
-			rec, err := startRecording(a.cfg, job)
-			if err != nil {
-				log.Printf("recording %q failed: %v", job.Event.Title, err)
-				continue
-			}
-			a.active[key] = rec
-			a.wg.Add(1)
-			go func() {
-				defer a.wg.Done()
-				if err := rec.Run(ctx); err != nil {
-					log.Printf("recording %q failed: %v", job.Event.Title, err)
-				}
-				a.mu.Lock()
-				delete(a.active, key)
-				a.mu.Unlock()
-			}()
-		}
-		a.mu.Unlock()
+		wake := min(time.Until(nextRefresh), a.startDue(ctx, now))
 
 		select {
 		case <-ctx.Done():
@@ -112,6 +80,60 @@ func (a *App) run(ctx context.Context) {
 			nextRefresh = time.Now()
 		case <-a.wake:
 		case <-time.After(wake):
+		}
+	}
+}
+
+// startDue starts recording every selected show whose window is open and
+// that isn't already recorded this airing, and returns how long until the
+// next one is due (at most maxSleep).
+func (a *App) startDue(ctx context.Context, now time.Time) time.Duration {
+	wake := maxSleep
+	jobs, err := a.upcoming(ctx, now)
+	if err != nil {
+		log.Printf("loading selections: %v", err)
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, job := range jobs {
+		key := job.Event.key()
+		if a.started[key] {
+			continue
+		}
+		if begin := job.Event.Start.Add(-a.cfg.PreRoll.Duration); now.Before(begin) {
+			wake = min(wake, begin.Sub(now))
+			continue
+		}
+		a.started[key] = true
+		rec, err := startRecording(a.cfg, job)
+		if err != nil {
+			log.Printf("recording %q failed: %v", job.Event.Title, err)
+			continue
+		}
+		a.active[key] = rec
+		a.wg.Add(1)
+		go func() {
+			defer a.wg.Done()
+			if err := rec.Run(ctx); err != nil {
+				log.Printf("recording %q failed: %v", job.Event.Title, err)
+			}
+			a.mu.Lock()
+			delete(a.active, key)
+			a.mu.Unlock()
+		}()
+	}
+	return wake
+}
+
+// allowRestart forgets which airings of a show have been recorded, except
+// ones still recording, so selecting it again records the current airing even
+// if an earlier recording of it was ended or failed.
+func (a *App) allowRestart(showKey string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for key := range a.started {
+		if strings.HasPrefix(key, showKey+"|") && a.active[key] == nil {
+			delete(a.started, key)
 		}
 	}
 }

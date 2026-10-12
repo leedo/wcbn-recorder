@@ -94,7 +94,7 @@ func TestGaplessDecode(t *testing.T) {
 		if err := f.finalize(t.Context(), f.part, out); err != nil {
 			t.Fatal(err)
 		}
-		files, _ := filepath.Glob(filepath.Join(out.trackDir, "*.mp3"))
+		files, _ := filepath.Glob(filepath.Join(out.trackDir, "[0-9]*.mp3")) // not the hidden show file
 		sort.Strings(files)
 		if len(files) < 4 {
 			t.Fatalf("only %d song files", len(files))

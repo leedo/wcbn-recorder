@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -204,8 +205,9 @@ func TestWebListen(t *testing.T) {
 	}
 }
 
-func TestStopRecording(t *testing.T) {
-	// A fake station that sends a frame every 10 ms until the client hangs up.
+// fakeStation serves an endless stream, a frame every 10 ms, until the
+// client hangs up.
+func fakeStation(t *testing.T) *httptest.Server {
 	station := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "audio/mpeg")
 		rc := http.NewResponseController(w)
@@ -221,7 +223,12 @@ func TestStopRecording(t *testing.T) {
 			}
 		}
 	}))
-	defer station.Close()
+	t.Cleanup(station.Close)
+	return station
+}
+
+func TestStopRecording(t *testing.T) {
+	station := fakeStation(t)
 
 	app, srv := testApp(t)
 	cfg := testConfig()
@@ -285,4 +292,83 @@ func TestStopRecording(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("stopped-before-start recording ran")
 	}
+}
+
+// Ending a recording, removing the show and adding it back records the
+// current airing again (it used to be skipped as already recorded).
+func TestReaddAfterEnd(t *testing.T) {
+	app, srv := testApp(t)
+	app.cfg.Destination, app.cfg.StreamURL = t.TempDir(), fakeStation(t).URL
+	app.cfg.ShowFile, app.cfg.TrackFiles = true, true
+	ctx, cancel := context.WithCancel(t.Context())
+	defer func() { cancel(); app.wg.Wait() }()
+
+	// Put "Train To Skaville" on the air now.
+	now := time.Now()
+	app.mu.Lock()
+	app.events[0].Start, app.events[0].End = now.Add(-time.Minute), now.Add(time.Hour)
+	key := app.events[0].key()
+	app.mu.Unlock()
+	shows, _ := app.store.Shows(t.Context())
+	var id int64
+	for _, sh := range shows {
+		if sh.Title == "Train To Skaville" {
+			id = sh.ID
+		}
+	}
+	toggle := func(record string) {
+		t.Helper()
+		resp, err := http.PostForm(fmt.Sprintf("%s/shows/%d/record", srv.URL, id), url.Values{"record": {record}, "from": {"mine"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+	}
+	active := func() *recording {
+		app.mu.Lock()
+		defer app.mu.Unlock()
+		return app.active[key]
+	}
+	waitFor := func(what string, ok func() bool) {
+		t.Helper()
+		for deadline := time.Now().Add(5 * time.Second); !ok(); time.Sleep(10 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %s", what)
+			}
+		}
+	}
+
+	toggle("1")
+	app.startDue(ctx, time.Now())
+	first := active()
+	if first == nil {
+		t.Fatal("selecting an on-air show didn't start recording")
+	}
+	waitFor("audio", func() bool { return first.bytesWritten() > 0 })
+
+	// End it; it is not restarted while the show stays selected.
+	first.Stop()
+	waitFor("the recording to finish", func() bool { return active() == nil })
+	app.startDue(ctx, time.Now())
+	if active() != nil {
+		t.Fatal("an ended recording restarted by itself")
+	}
+
+	// Remove the show and add it back: the current airing records again.
+	toggle("0")
+	toggle("1")
+	app.startDue(ctx, time.Now())
+	second := active()
+	if second == nil {
+		t.Fatal("re-adding the show didn't start recording")
+	}
+	if second == first || second.out.base == first.out.base {
+		t.Errorf("second recording should get its own files: %q vs %q", second.out.base, first.out.base)
+	}
+	if _, err := os.Stat(first.out.showFile); err != nil {
+		t.Errorf("first recording's file: %v", err)
+	}
+	waitFor("audio", func() bool { return second.bytesWritten() > 0 })
+	second.Stop()
+	waitFor("the second recording to finish", func() bool { return active() == nil })
 }
