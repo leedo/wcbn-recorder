@@ -337,9 +337,16 @@
   const player = new Audio();
   player.preload = "none";
   let listening = null, listenState = "";
+  // The button for what's playing shows "Stop listening". If that button is
+  // gone (say the On air card became a recording card when the show started
+  // recording), the panel's first Listen button takes over: the live stream
+  // and any recording in progress are the same station audio, so playback
+  // carries on and that button stops it.
   function syncListenButtons() {
-    document.querySelectorAll("#live button.listen").forEach(b => {
-      const on = b.dataset.src === listening;
+    const buttons = [...document.querySelectorAll("#live button.listen")];
+    const active = listening && (buttons.find(b => b.dataset.src === listening) || buttons[0]);
+    buttons.forEach(b => {
+      const on = b === active;
       b.setAttribute("aria-pressed", on);
       b.textContent = !on ? "▶ Listen" : listenState === "playing" ? "■ Stop listening" : "… Connecting";
     });
@@ -385,7 +392,7 @@
   document.addEventListener("click", e => {
     const b = e.target.closest("#live button.listen");
     if (!b) return;
-    if (b.dataset.src === listening) stopListening(); else startListening(b.dataset.src);
+    if (b.getAttribute("aria-pressed") === "true") stopListening(); else startListening(b.dataset.src);
   });
 
   // Keep the live recording panel current, preserving which song lists are open.
