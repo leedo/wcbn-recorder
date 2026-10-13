@@ -26,7 +26,7 @@ import (
 var templateFS embed.FS
 
 const (
-	liveInterval      = 2 * time.Second  // how often the page's event streams check for progress
+	liveInterval      = time.Second      // how often the page's event streams check for progress
 	keepAliveInterval = 30 * time.Second // the longest an event stream goes without sending anything
 )
 
