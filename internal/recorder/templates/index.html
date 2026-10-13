@@ -47,6 +47,7 @@
   th[aria-sort=ascending] button.sort::after { content: "↑"; opacity: 1; }
   th[aria-sort=descending] button.sort::after { content: "↓"; opacity: 1; }
   tr.selected { background: var(--accent-bg); }
+  .add-col { text-align: right; }
   tr.off td:not(:first-child) { opacity: .6; }
   td.title { min-width: 220px; }
   td.title a { font-weight: 600; text-decoration: none; }
@@ -187,24 +188,17 @@
 <div class="card">
 <table>
   <thead><tr>
-    <th aria-sort="none"><button type="button" class="sort" data-col="0" data-type="number" data-first="desc">Add</button></th>
-    <th aria-sort="ascending"><button type="button" class="sort" data-col="1">Show</button></th>
-    <th aria-sort="none"><button type="button" class="sort" data-col="2">DJ</button></th>
-    <th aria-sort="none"><button type="button" class="sort" data-col="3">Category</button></th>
-    <th aria-sort="none"><button type="button" class="sort" data-col="4" data-type="number">Schedule</button></th>
-    <th aria-sort="none"><button type="button" class="sort" data-col="5" data-type="number">Next airing</button></th>
+    <th aria-sort="ascending"><button type="button" class="sort" data-col="0">Show</button></th>
+    <th aria-sort="none"><button type="button" class="sort" data-col="1">DJ</button></th>
+    <th aria-sort="none"><button type="button" class="sort" data-col="2">Category</button></th>
+    <th aria-sort="none"><button type="button" class="sort" data-col="3" data-type="number">Schedule</button></th>
+    <th aria-sort="none"><button type="button" class="sort" data-col="4" data-type="number">Next airing</button></th>
+    <th class="add-col">Add</th>
   </tr></thead>
   <tbody>
   {{range .Shows}}
   <tr id="show-{{.ID}}" class="{{if .Record}}selected{{end}} {{if not .OnCalendar}}off{{end}}"
       data-search="{{lower .Title}} {{lower .DJ}} {{lower .Description}}" data-category="{{lower .Category}}">
-    <td data-sort="{{if .Record}}1{{else}}0{{end}}">
-      <form method="post" action="/shows/{{.ID}}/record" class="toggle-form" data-id="{{.ID}}">
-        <input type="hidden" name="record" value="1">
-        <input type="hidden" name="from" value="add">
-        <button type="submit" class="toggle"{{if .Record}} disabled{{end}}>{{if .Record}}✓ Added{{else}}+ Add{{end}}</button>
-      </form>
-    </td>
     <td class="title" data-sort="{{lower .Title}}">
       <div class="title-row">
       {{template "art" (art .Image $.StationLogo "art-sm" true)}}
@@ -224,6 +218,13 @@
         {{if .LastSeen.IsZero}}<br><span class="muted">(never seen)</span>{{end}}
         <form method="post" action="/shows/{{.ID}}/delete" class="delete-form"{{if .Record}} hidden{{end}}><br><button type="submit" class="link">remove</button></form>
       {{end}}
+    </td>
+    <td class="add-col">
+      <form method="post" action="/shows/{{.ID}}/record" class="toggle-form" data-id="{{.ID}}">
+        <input type="hidden" name="record" value="1">
+        <input type="hidden" name="from" value="add">
+        <button type="submit" class="toggle"{{if .Record}} disabled{{end}}>{{if .Record}}✓ Added{{else}}+ Add{{end}}</button>
+      </form>
     </td>
   </tr>
   {{end}}
@@ -285,7 +286,6 @@
     const row = document.getElementById("show-" + id);
     if (!row) return;
     row.classList.toggle("selected", record);
-    row.cells[0].dataset.sort = record ? "1" : "0";
     const button = row.querySelector(".toggle");
     button.disabled = record;
     button.textContent = record ? "✓ Added" : "+ Add";
@@ -494,14 +494,17 @@
         const c = numeric ? Number(x) - Number(y) : collator.compare(x, y);
         if (c !== 0) return sign * c;
       }
-      return collator.compare(a.cells[1].dataset.sort, b.cells[1].dataset.sort);
+      return collator.compare(a.querySelector("td.title").dataset.sort, b.querySelector("td.title").dataset.sort);
     });
     tbody.append(...rows);
-    headers.forEach((th, i) => th.setAttribute("aria-sort", i === col ? (dir === "desc" ? "descending" : "ascending") : "none"));
-    localStorage.setItem("wcbn-sort", JSON.stringify({ col, dir }));
+    headers.forEach((th, i) => {
+      if (th.querySelector("button.sort")) th.setAttribute("aria-sort", i === col ? (dir === "desc" ? "descending" : "ascending") : "none");
+    });
+    localStorage.setItem("wcbn-sort-2", JSON.stringify({ col, dir })); // "-2": column numbers changed when Add moved
   }
   headers.forEach((th, col) => {
     const button = th.querySelector("button.sort");
+    if (!button) return; // the Add column isn't sortable
     button.addEventListener("click", () => {
       const current = th.getAttribute("aria-sort");
       const dir = current === "none" ? (button.dataset.first || "asc") : current === "ascending" ? "desc" : "asc";
@@ -511,9 +514,9 @@
   // Restore the last sort (?sort=<column>&dir=asc|desc overrides it, for links).
   const params = new URLSearchParams(location.search);
   let saved = null;
-  try { saved = JSON.parse(localStorage.getItem("wcbn-sort")); } catch {}
+  try { saved = JSON.parse(localStorage.getItem("wcbn-sort-2")); } catch {}
   if (params.has("sort")) saved = { col: Number(params.get("sort")), dir: params.get("dir") === "desc" ? "desc" : "asc" };
-  if (saved && headers[saved.col]) sortBy(saved.col, saved.dir);
+  if (saved && headers[saved.col]?.querySelector("button.sort")) sortBy(saved.col, saved.dir);
 </script>
 </body>
 </html>

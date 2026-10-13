@@ -69,7 +69,7 @@ func TestWebToggle(t *testing.T) {
 	if strings.Contains(page, "<script>alert(1)</script>") {
 		t.Error("show title was not escaped")
 	}
-	if !strings.Contains(page, `<td class="title" data-sort="train to skaville">`) || !strings.Contains(page, `class="sort" data-col="5" data-type="number"`) {
+	if !strings.Contains(page, `<td class="title" data-sort="train to skaville">`) || !strings.Contains(page, `class="sort" data-col="4" data-type="number"`) {
 		t.Error("missing sort attributes")
 	}
 

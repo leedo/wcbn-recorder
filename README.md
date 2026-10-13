@@ -44,8 +44,8 @@ show: you're taken back to Your shows, with the new show highlighted. Shows
 already in Your shows are marked **✓ Added**; remove them from Your shows.
 **Cancel** goes back without changes. The list opens on its own when nothing is
 selected yet, and `/?add=1` links straight to it. Click a column header to sort by it, and click again to reverse. "Schedule"
-sorts by weekly time slot, Monday first; "Next airing" sorts by date; "Record"
-puts selected shows first. The sort is remembered, and links can set it with
+sorts by weekly time slot, Monday first; "Next airing" sorts by date. The Add
+column, on the right, isn't sortable. The sort is remembered, and links can set it with
 `?sort=<column number>&dir=asc|desc` (columns count from 0).
 
 Selecting a show that is on the air starts recording right away. Removing a show
