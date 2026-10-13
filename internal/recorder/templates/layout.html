@@ -29,7 +29,7 @@
   .muted { color: var(--muted); }
   footer { width: calc(100% - 40px); max-width: 1060px; margin: 0 auto 40px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
   .status { font-size: 13px; display: flex; gap: 10px; align-items: center; }
-  .error { background: var(--accent-bg); border: 1px solid var(--accent); border-radius: 8px; padding: 10px 14px; margin-top: 16px; }
+  .error { background: var(--accent-bg); border: 1px solid var(--accent); border-radius: 8px; padding: 10px 14px; margin: 16px 0; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
   .list { list-style: none; margin: 0; padding: 0; }
   .list li { padding: 10px 14px; border-top: 1px solid var(--line); display: flex; gap: 14px; align-items: baseline; }
@@ -104,8 +104,11 @@
   .live-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
   .live-head h2 { margin: 0; font-size: 19px; }
   .live-head .slot { margin-left: auto; font-variant-numeric: tabular-nums; }
-  /* The card's buttons wrap onto the next line together, not one at a time. */
-  .live-actions { display: flex; gap: 12px; align-items: center; flex-wrap: nowrap; }
+  /* Now playing, with the card's buttons at the bottom right. The buttons
+     wrap onto the next line together, not one at a time. */
+  .live-foot { display: flex; align-items: flex-end; gap: 12px 16px; flex-wrap: wrap; margin-top: 16px; }
+  .live-foot .now-playing { flex: 1 1 260px; min-width: 0; margin-top: 0; }
+  .live-actions { display: flex; gap: 12px; align-items: center; flex-wrap: nowrap; margin-left: auto; }
   .badge { font-size: 11px; font-weight: 700; letter-spacing: .06em; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; align-self: center; }
   .badge.rec { color: var(--rec); }
   .badge.warn { color: #c98a00; }
@@ -127,9 +130,8 @@
   button.record-now { font-weight: 600; padding: 5px 14px; background: var(--accent); border-color: var(--accent); color: #fff; }
   /* Site navigation */
   .site-nav { max-width: 1100px; margin: 0 auto; padding: 20px 20px 0; display: flex; gap: 20px; align-items: baseline; flex-wrap: wrap; }
-  .site-nav .brand { font-size: 22px; font-weight: 700; text-decoration: none; margin-right: 8px; }
-  .site-nav a:not(.brand) { font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); padding-bottom: 2px; border-bottom: 2px solid transparent; }
-  .site-nav a:not(.brand):hover { color: var(--fg); }
+  .site-nav a { font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); padding-bottom: 2px; border-bottom: 2px solid transparent; }
+  .site-nav a:hover { color: var(--fg); }
   .site-nav a[aria-current=page] { color: var(--fg); border-bottom-color: var(--accent); }
   main { padding-top: 16px; }
   main:focus { outline: none; }
@@ -152,16 +154,16 @@
   .player-song { font-size: 13px; }
 
   /* Recordings page */
-  .page-head h1 { font-size: 19px; margin: 8px 0 16px; }
-  .page-head + .section-head { margin-top: 0; }
+  main > .section-head:first-child { margin-top: 8px; } /* Your shows, at the top of the Shows page; lined up with the other pages' headings */
   .rec-list .show { flex: 1; min-width: 0; }
   .rec-list .sub { font-size: 13px; overflow-wrap: anywhere; }
   /* Logs page */
-  .log-note { font-size: 13px; margin: -8px 0 12px; }
+  .log-note { font-size: 13px; margin: 8px 0 12px; }
   ol.log { list-style: none; margin: 0; padding: 10px 0; max-height: 70vh; overflow: auto; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   ol.log li { display: grid; grid-template-columns: 11em 1fr; gap: 12px; padding: 1px 14px; }
   ol.log time { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
   ol.log span { white-space: pre-wrap; overflow-wrap: anywhere; }
+  #recordings > :first-child { margin-top: 8px; } /* lined up with the top of the other pages */
   .rec-list li { align-items: center; }
   .rec-actions { min-width: 8.5em; text-align: right; }
   button.danger { color: var(--rec); }
@@ -198,8 +200,7 @@
 <body>
 <div class="live-wrap"><div id="live" aria-live="polite">{{template "live" .Live}}</div></div>
 <nav class="site-nav" aria-label="Site">
-  <a class="brand" href="/">WCBN Recorder</a>
-  <a href="/"{{if eq .Page "home"}} aria-current="page"{{end}}>Home</a>
+  <a href="/"{{if eq .Page "home"}} aria-current="page"{{end}}>Upcoming</a>
   <a href="/shows"{{if eq .Page "shows"}} aria-current="page"{{end}}>Shows</a>
   <a href="/recordings"{{if eq .Page "recordings"}} aria-current="page"{{end}}>Recordings</a>
   <a href="/logs"{{if eq .Page "logs"}} aria-current="page"{{end}}>Logs</a>
@@ -331,7 +332,7 @@
     const main = document.getElementById("page");
     page = pages[main.dataset.page] || {};
     page.init?.(main);
-    document.querySelectorAll(".site-nav a:not(.brand)").forEach(a => {
+    document.querySelectorAll(".site-nav a").forEach(a => {
       if (a.pathname === location.pathname) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
   }

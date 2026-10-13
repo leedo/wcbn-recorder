@@ -313,7 +313,7 @@ func TestWebEvents(t *testing.T) {
 func TestWebLayout(t *testing.T) {
 	app, srv := testApp(t)
 	home := get(t, srv.URL+"/")
-	for _, want := range []string{`<main id="page" data-page="home"`, `<a href="/" aria-current="page">Home</a>`, `<div id="live" aria-live="polite">`, `<div id="player">`, "<title>WCBN Recorder</title>"} {
+	for _, want := range []string{`<main id="page" data-page="home"`, `<a href="/" aria-current="page">Upcoming</a>`, `<div id="live" aria-live="polite">`, `<div id="player">`, "<title>WCBN Recorder</title>"} {
 		if !strings.Contains(home, want) {
 			t.Errorf("home page missing %q", want)
 		}
@@ -354,7 +354,7 @@ func TestWebLayout(t *testing.T) {
 	if skaville < 0 || yazoo < 0 || yazoo > skaville {
 		t.Errorf("recordings out of order or missing:\n%s", page)
 	}
-	for _, want := range []string{`Recordings <span class="muted">(2)</span>`, "with brian tomsic", "1:00:00 · 144.0 MB · 1 song", "unfinished", "Train To Skaville/Train To Skaville - 2026-10-06"} {
+	for _, want := range []string{"with brian tomsic", "1:00:00 · 144.0 MB · 1 song", "unfinished", "Train To Skaville/Train To Skaville - 2026-10-06"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("recordings page missing %q", want)
 		}

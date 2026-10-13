@@ -3,7 +3,6 @@
    redraws it when a recording starts, ends or is saved (data-state). */}}
 {{define "recordings"}}
 <div id="recordings" data-state="{{.State}}">
-<header class="page-head"><h1>Recordings{{with .Recordings}} <span class="muted">({{len .}})</span>{{end}}</h1></header>
 {{if .Recordings}}<div class="card"><ul class="list rec-list">
   {{range .Recordings}}<li data-key="rec-{{.ID}}">
     <span class="time">{{when .Start}}</span>

@@ -1,7 +1,6 @@
 {{/* The shows page: Your shows, the shows picked for recording, and in its
    place on "+ Add shows" (?add=1), the list of every show to add from. */}}
 {{define "shows"}}
-<header class="page-head"><h1>Shows</h1></header>
 <div class="section-head" id="your-shows">
   <h2><span id="shows-title">{{if .Browse}}Add shows{{else}}Your shows{{end}}</span> <span class="muted" id="selected-count"{{if .Browse}} hidden{{end}}>({{.Selected}})</span></h2>
   <div class="controls" id="browse-controls"{{if not .Browse}} hidden{{end}}>

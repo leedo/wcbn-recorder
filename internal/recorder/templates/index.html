@@ -3,7 +3,6 @@
 {{define "home"}}
 {{with .RefreshErr}}<div class="error"><strong>Couldn't load the schedule:</strong> {{.}}</div>{{end}}
 
-<h2>Upcoming recordings</h2>
 <div class="card" id="upcoming">{{template "upcoming" .}}</div>
 {{end}}
 
@@ -18,6 +17,19 @@
     <h2>{{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
     {{with .DJ}}<span class="muted">with {{.}}</span>{{end}}
     {{if not .Start.IsZero}}<span class="slot muted">{{clock .Start}} – {{clock .End}}</span>{{end}}
+  </div>
+  {{if not .Start.IsZero}}<div class="progress" role="progressbar" aria-label="Show progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Progress}}"><div style="width: {{.Progress}}%"></div></div>{{end}}
+  <div class="stats muted">Not recording{{with .Bitrate}} · {{.}} kbps{{end}}{{if .Selected}} · this show is in Your shows{{end}}</div>
+  <div class="live-foot">
+    {{if .Song}}
+    <div class="now-playing">
+      <span class="label">Now playing</span>
+      <span class="song">{{.Song}}</span>
+      {{with .Artist}}<span class="artist">{{.}}</span>{{end}}
+    </div>
+    {{else}}
+    <div class="now-playing"><span class="meta">No song information from the station right now.</span></div>
+    {{end}}
     <div class="live-actions">
       <button type="button" class="listen" aria-pressed="false" aria-label="Listen to WCBN live">▶ Listen</button>
       {{if .ShowID}}
@@ -29,17 +41,6 @@
       {{end}}
     </div>
   </div>
-  {{if not .Start.IsZero}}<div class="progress" role="progressbar" aria-label="Show progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Progress}}"><div style="width: {{.Progress}}%"></div></div>{{end}}
-  <div class="stats muted">Not recording{{with .Bitrate}} · {{.}} kbps{{end}}{{if .Selected}} · this show is in Your shows{{end}}</div>
-  {{if .Song}}
-  <div class="now-playing">
-    <span class="label">Now playing</span>
-    <span class="song">{{.Song}}</span>
-    {{with .Artist}}<span class="artist">{{.}}</span>{{end}}
-  </div>
-  {{else}}
-  <div class="now-playing"><span class="meta">No song information from the station right now.</span></div>
-  {{end}}
   </div>
   </div>
 </section>
@@ -56,6 +57,24 @@
     <h2>{{if .ShowID}}<a href="/shows#mine-{{.ShowID}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
     {{with .DJ}}<span class="muted">with {{.}}</span>{{end}}
     <span class="slot muted">{{clock .Start}} – {{clock .End}}</span>
+  </div>
+  <div class="progress" role="progressbar" aria-label="Show progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Progress}}"><div style="width: {{.Progress}}%"></div></div>
+  <div class="stats muted">
+    Recorded {{dur .RecordedMs}} · {{mb .Bytes}}{{with .Bitrate}} · {{.}} kbps{{end}} · stops at {{clock .Until}}
+    {{if .SongFiles}} · {{.Saved}} song{{if ne .Saved 1}}s{{end}} saved{{end}}
+    {{with .Reconnects}} · {{.}} reconnect{{if gt . 1}}s{{end}}{{end}}
+    {{if and (not .Connected) (not .Finishing) .LastErr}}<br>Last error: {{.LastErr}}{{end}}
+  </div>
+  <div class="live-foot">
+    {{with .Current}}
+    <div class="now-playing">
+      <span class="label">Now playing</span>
+      <span class="song">{{.Title}}</span>
+      {{with .Artist}}<span class="artist">{{.}}</span>{{end}}
+    </div>
+    {{else}}
+    <div class="now-playing"><span class="meta">Waiting for song information from the stream…</span></div>
+    {{end}}
     <div class="live-actions">
       <button type="button" class="listen" aria-pressed="false" aria-label="Listen to WCBN live">▶ Listen</button>
       {{if and .ID (not (or .Finishing .Stopped))}}
@@ -65,22 +84,6 @@
       {{end}}
     </div>
   </div>
-  <div class="progress" role="progressbar" aria-label="Show progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Progress}}"><div style="width: {{.Progress}}%"></div></div>
-  <div class="stats muted">
-    Recorded {{dur .RecordedMs}} · {{mb .Bytes}}{{with .Bitrate}} · {{.}} kbps{{end}} · stops at {{clock .Until}}
-    {{if .SongFiles}} · {{.Saved}} song{{if ne .Saved 1}}s{{end}} saved{{end}}
-    {{with .Reconnects}} · {{.}} reconnect{{if gt . 1}}s{{end}}{{end}}
-    {{if and (not .Connected) (not .Finishing) .LastErr}}<br>Last error: {{.LastErr}}{{end}}
-  </div>
-  {{with .Current}}
-  <div class="now-playing">
-    <span class="label">Now playing</span>
-    <span class="song">{{.Title}}</span>
-    {{with .Artist}}<span class="artist">{{.}}</span>{{end}}
-  </div>
-  {{else}}
-  <div class="now-playing"><span class="meta">Waiting for song information from the stream…</span></div>
-  {{end}}
   </div>
   </div>
 </section>

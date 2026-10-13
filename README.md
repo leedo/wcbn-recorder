@@ -33,7 +33,7 @@ internal/recorder/    scheduler, recording, song files, web UI (templates/)
 
 ## Web UI
 
-The UI has four pages, **Home**, **Shows**, **Recordings** and **Logs**, with the live panel (what's
+The UI has four pages, **Upcoming** (the home page), **Shows**, **Recordings** and **Logs**, with the live panel (what's
 on air or recording, described below) at the top of both. Scroll it out of view
 and it shrinks into a bar pinned to the top of the window, with the show's
 artwork, title and DJ, the current song, a REC badge while recording, and the
@@ -53,7 +53,7 @@ recorder's log output: the last 1,000 lines since it started, with new lines
 added as they're logged. The log is also written to stderr as usual (with
 timestamps, except under journald, which adds its own).
 
-The home page shows the selected shows coming up in the next week. The
+**Upcoming** lists the selected shows coming up in the next week. The
 **Shows** page has **Your shows**, the list of selected shows with their next
 airing and a **Remove** button.
 
