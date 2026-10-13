@@ -83,6 +83,7 @@ func TestWebLive(t *testing.T) {
 	}
 
 	f := newFakeRecording(t, testConfig())
+	f.job.Event.Start, f.job.Event.End = time.Now().Add(-time.Minute), time.Now().Add(time.Hour) // on the air now
 	f.title("Pressure Drop by Toots & the Maytals on Train To Skaville with brian tomsic")
 	f.frames(1, 3)
 	f.Write(nil) // marks the stream connected
@@ -110,6 +111,25 @@ func TestWebLive(t *testing.T) {
 	header := firstEvent(t, srv.URL, &out)
 	if out.Recording != 1 || !strings.Contains(out.Live, "Pressure Drop") || header.Get("Content-Type") != "text/event-stream" {
 		t.Errorf("/events = %+v", out)
+	}
+}
+
+func TestLiveRecording(t *testing.T) {
+	ten := time.Date(2026, 10, 13, 10, 0, 0, 0, time.UTC)
+	// Back to back, each with pre-roll and post-roll, so both are recording
+	// around 10:00.
+	active := []liveStatus{
+		{Title: "Nine", Start: ten.Add(-time.Hour), End: ten},
+		{Title: "Ten", Start: ten, End: ten.Add(time.Hour)},
+	}
+	for at, want := range map[time.Duration]string{-time.Minute: "Nine", 0: "Ten", time.Minute: "Ten", -2 * time.Hour: "", 2 * time.Hour: ""} {
+		got := ""
+		if st := liveRecording(active, ten.Add(at)); st != nil {
+			got = st.Title
+		}
+		if got != want {
+			t.Errorf("at 10:00%+v: live card shows %q, want %q", at, got, want)
+		}
 	}
 }
 

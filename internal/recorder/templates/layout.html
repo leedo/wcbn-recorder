@@ -392,7 +392,7 @@
   // (a page load would stop the audio); the forms still work without JS.
   // Delegated, since the page's contents are replaced.
   // setRowState shows a show's row in the show list as selected for
-  // recording (highlighted, with Remove) or not (with + Add).
+  // recording (highlighted, with Remove) or not (with Add).
   function setRowState(id, record) {
     const row = document.getElementById("show-" + id);
     if (!row || row.classList.contains("selected") === record) return;
@@ -400,12 +400,12 @@
     row.querySelector(".toggle-form input[name=record]").value = record ? "0" : "1";
     const button = row.querySelector(".toggle");
     const title = row.querySelector("td.title").dataset.title;
-    button.textContent = record ? "Remove" : "+ Add";
+    button.textContent = record ? "Remove" : "Add";
     button.setAttribute("aria-label", (record ? "Stop recording " : "Record ") + title);
     const del = row.querySelector(".delete-form"); // only shows not on the schedule have one
     if (del) del.hidden = record;
   }
-  // + Add / Remove in the show list.
+  // Add / Remove in the show list.
   document.addEventListener("submit", async e => {
     const form = e.target.closest(".toggle-form");
     if (!form) return;

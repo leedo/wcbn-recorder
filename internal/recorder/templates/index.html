@@ -7,7 +7,7 @@
 {{end}}
 
 {{define "live"}}
-{{if not .Recording}}{{with .OnAir}}
+{{if not .Live}}{{with .OnAir}}
 <section class="card live-card onair" data-key="onair">
   <div class="live-body">
   {{template "art" (art .Image $.StationLogo "art-lg" false)}}
@@ -38,7 +38,7 @@
   </div>
 </section>
 {{end}}{{end}}
-{{range .Recording}}
+{{with .Live}}
 <section class="card live-card" data-key="{{.Key}}">
   <div class="live-body">
   {{template "art" (art .Image $.StationLogo "art-lg" false)}}

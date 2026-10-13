@@ -1,2 +1,4 @@
 /wcbn-recorder
 .claude
+config.json
+wcbn-recorder.db*

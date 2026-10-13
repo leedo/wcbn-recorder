@@ -50,6 +50,7 @@ type showView struct {
 type pageData struct {
 	RefreshErr  string
 	Recording   []liveStatus
+	Live        *liveStatus // the recording on the live card; see liveRecording
 	Upcoming    []jobView
 	Shows       []showView // every known show, for the Shows page
 	Categories  []string
@@ -524,21 +525,31 @@ func (a *App) pageData(ctx context.Context) (pageData, error) {
 			data.Upcoming = append(data.Upcoming, view(j))
 		}
 	}
-	if len(data.Recording) == 0 {
+	data.Live = liveRecording(data.Recording, now)
+	if data.Live == nil {
 		data.OnAir = a.onAir(ctx, events, ids, now)
 	}
 	data.Player = data.player()
 	return data, nil
 }
 
-// player describes the player bar: the recording in progress (the earliest,
-// if two overlap), or else what's on the air.
+// liveRecording picks the recording for the live card: the one whose
+// scheduled slot is on now. Pre-roll and post-roll don't count, so when two
+// shows are recorded back to back, only the one on the air is shown.
+func liveRecording(active []liveStatus, now time.Time) *liveStatus {
+	for i, st := range active {
+		if !now.Before(st.Start) && now.Before(st.End) {
+			return &active[i]
+		}
+	}
+	return nil
+}
+
+// player describes the player bar: the recording on the live card, or else
+// what's on the air.
 func (d pageData) player() playerView {
 	v := playerView{Title: stationName, StationLogo: d.StationLogo}
-	for _, st := range d.Recording {
-		if st.Finishing || st.Stopped {
-			continue
-		}
+	if st := d.Live; st != nil && !st.Finishing && !st.Stopped {
 		v.Recording, v.Title, v.DJ, v.Image = true, st.Title, st.DJ, st.Image
 		if st.Current != nil {
 			v.Song, v.Artist = st.Current.Title, st.Current.Artist

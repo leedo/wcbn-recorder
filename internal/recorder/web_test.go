@@ -69,8 +69,8 @@ func TestWebToggle(t *testing.T) {
 		strings.Contains(page, `id="mine"`) || strings.Contains(page, "Your shows") || strings.Contains(page, "<h2>Add shows</h2>") {
 		t.Error("the shows page should be just the search and the show list")
 	}
-	if !strings.Contains(page, `<input type="hidden" name="record" value="1">`) || !strings.Contains(page, `aria-label="Record Train To Skaville">+ Add</button>`) {
-		t.Error("a show that isn't selected should have + Add")
+	if !strings.Contains(page, `<input type="hidden" name="record" value="1">`) || !strings.Contains(page, `aria-label="Record Train To Skaville">Add</button>`) {
+		t.Error("a show that isn't selected should have Add")
 	}
 	if strings.Contains(page, "Refresh now") || strings.Contains(page, "Schedule updated") {
 		t.Error("the page shouldn't show when the schedule was updated, or a Refresh button")
