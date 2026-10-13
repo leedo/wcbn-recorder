@@ -24,6 +24,9 @@ import (
 //go:embed templates/*.html
 var templateFS embed.FS
 
+//go:embed favicon.png
+var favicon []byte
+
 type jobView struct {
 	ShowID     int64
 	Title      string
@@ -65,6 +68,11 @@ func (a *App) Handler() http.Handler {
 	}).ParseFS(templateFS, "templates/*.html"))
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /favicon.png", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "max-age=86400")
+		w.Write(favicon)
+	})
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		data, err := a.pageData(r.Context())
 		if err != nil {
