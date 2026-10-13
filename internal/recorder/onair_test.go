@@ -79,7 +79,7 @@ func TestWebOnAir(t *testing.T) {
 	app.mu.Unlock()
 
 	page := get(t, srv.URL+"/")
-	for _, want := range []string{`class="card live-card onair"`, "ON AIR", "Train To Skaville", "with brian tomsic",
+	for _, want := range []string{`class="card live-card onair"`, "ON AIR", `<h2><a href="https://spinitron.com/WCBN/show/1/x" target="_blank" rel="noopener">Train To Skaville</a></h2>`, "with brian tomsic",
 		"West Coast Blues", "Blind Blake", `data-src="/listen"`, "+ Record this show", `name="from" value="onair"`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("On air card missing %q", want)

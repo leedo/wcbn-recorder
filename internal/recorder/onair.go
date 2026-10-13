@@ -21,6 +21,7 @@ import (
 type onAirView struct {
 	ShowID     int64 // 0 if the program isn't a known show
 	Title      string
+	URL        string // the show's Spinitron page
 	DJ         string
 	Image      string
 	Start, End time.Time

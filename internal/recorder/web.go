@@ -107,6 +107,7 @@ func (a *App) Handler() http.Handler {
 		writeJSON(w, map[string]any{
 			"live": live.String(), "upcoming": upcoming.String(), "mine": mine.String(),
 			"recording": len(data.Recording), "recordingShows": recordingShows,
+			"updated": ago(data.LastRefresh), "refreshErr": data.RefreshErr,
 		})
 	})
 	// Listen to the station, through the shared connection; the same stream
@@ -190,12 +191,20 @@ func (a *App) Handler() http.Handler {
 			httpError(w, err)
 			return
 		}
+		if wantsJSON(r) {
+			writeJSON(w, map[string]any{"id": id})
+			return
+		}
 		http.Redirect(w, r, "/?add=1", http.StatusSeeOther)
 	})
 	mux.HandleFunc("POST /refresh", func(w http.ResponseWriter, r *http.Request) {
 		poke(a.refreshNow)
 		// Also refetch every show page, not just stale ones.
 		go a.refreshDetails(context.WithoutCancel(r.Context()), time.Now())
+		if wantsJSON(r) {
+			w.WriteHeader(http.StatusAccepted) // the page picks up the result on its next refresh
+			return
+		}
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	})
 
@@ -338,6 +347,10 @@ func (a *App) onAir(ctx context.Context, events []spinitron.Event, shows map[str
 	if ok {
 		sh := shows[spinitron.Normalize(ev.Title)]
 		v.ShowID, v.Title, v.DJ, v.Image, v.Selected = sh.ID, ev.Title, ev.DJ, sh.Image, sh.Record
+		v.URL = sh.URL
+		if v.URL == "" {
+			v.URL = ev.URL
+		}
 		v.Start, v.End = ev.Start, ev.End
 		if v.DJ == "" {
 			v.DJ = sh.DJ

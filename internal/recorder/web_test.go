@@ -3,6 +3,7 @@ package recorder
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -216,5 +217,43 @@ func TestWebArtwork(t *testing.T) {
 	}
 	if got := artImage("", "", "art-sm", true); got.Src != "" {
 		t.Errorf("no image and no logo: %+v", got)
+	}
+}
+
+// Refresh now and remove answer the page's script without a redirect, so the
+// page doesn't reload (which would stop any audio).
+func TestWebInPlaceActions(t *testing.T) {
+	app, srv := testApp(t)
+	post := func(path string) *http.Response {
+		t.Helper()
+		req, _ := http.NewRequest("POST", srv.URL+path, nil)
+		req.Header.Set("Accept", "application/json")
+		client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp
+	}
+	if resp := post("/refresh"); resp.StatusCode != http.StatusAccepted {
+		t.Errorf("refresh: %s", resp.Status)
+	}
+	shows, _ := app.store.Shows(context.Background())
+	if resp := post(fmt.Sprintf("/shows/%d/delete", shows[0].ID)); resp.StatusCode != http.StatusOK {
+		t.Errorf("delete: %s", resp.Status)
+	}
+	if after, _ := app.store.Shows(context.Background()); len(after) != len(shows)-1 {
+		t.Errorf("delete didn't remove the show: %d -> %d", len(shows), len(after))
+	}
+	resp, err := http.Get(srv.URL + "/live")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out struct{ Updated string }
+	json.NewDecoder(resp.Body).Decode(&out)
+	if out.Updated != "just now" {
+		t.Errorf("updated = %q", out.Updated)
 	}
 }

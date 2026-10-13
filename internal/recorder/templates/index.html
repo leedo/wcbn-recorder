@@ -63,6 +63,7 @@
   button.toggle:disabled { cursor: default; color: var(--muted); border-color: transparent; background: none; }
   button.link { border: 0; background: none; padding: 0; color: var(--muted); text-decoration: underline; font-size: 12px; }
   form { display: inline; margin: 0; }
+  [hidden] { display: none !important; } /* rules like the one above would otherwise override it */
   .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 32px 0 10px; }
   .section-head h2 { margin: 0; }
   a.button { display: inline-block; font-size: 14px; font-weight: 600; padding: 7px 14px; border-radius: 7px; border: 1px solid var(--line); text-decoration: none; white-space: nowrap; }
@@ -152,8 +153,8 @@
 <header>
   <h1>WCBN Recorder</h1>
   <div class="status muted">
-    <span>Schedule updated {{ago .LastRefresh}}</span>
-    <form method="post" action="/refresh"><button type="submit">Refresh now</button></form>
+    <span>Schedule updated <span id="updated">{{ago .LastRefresh}}</span></span>
+    <form method="post" action="/refresh" class="refresh-form"><button type="submit">Refresh now</button></form>
   </div>
 </header>
 {{with .RefreshErr}}<div class="error"><strong>Couldn't load the schedule:</strong> {{.}}</div>{{end}}
@@ -216,7 +217,7 @@
       {{if .OnCalendar}}{{when .NextAiring}}{{else}}
         <span class="muted">Not on this week's schedule</span>
         {{if .LastSeen.IsZero}}<br><span class="muted">(never seen)</span>{{end}}
-        {{if not .Record}}<br><form method="post" action="/shows/{{.ID}}/delete"><button type="submit" class="link">remove</button></form>{{end}}
+        <form method="post" action="/shows/{{.ID}}/delete" class="delete-form"{{if .Record}} hidden{{end}}><br><button type="submit" class="link">remove</button></form>
       {{end}}
     </td>
   </tr>
@@ -283,6 +284,8 @@
     const button = row.querySelector(".toggle");
     button.disabled = record;
     button.textContent = record ? "✓ Added" : "+ Add";
+    const remove = row.querySelector(".delete-form"); // only shows not on the schedule have one
+    if (remove) remove.hidden = record;
   }
   document.addEventListener("submit", async e => {
     const form = e.target.closest(".toggle-form");
@@ -389,6 +392,26 @@
   player.addEventListener("waiting", () => { listenState = "connecting"; syncListenButtons(); });
   player.addEventListener("ended", stopListening);   // the recording finished
   player.addEventListener("error", () => { if (listening) stopListening(); });
+  // Refresh now and remove work in place too: a page load would stop any
+  // audio that's playing.
+  document.addEventListener("submit", async e => {
+    const form = e.target.closest(".refresh-form, .delete-form");
+    if (!form) return;
+    e.preventDefault();
+    const button = form.querySelector("button");
+    button.disabled = true;
+    try {
+      const res = await fetch(form.action, { method: "POST", headers: { Accept: "application/json" } });
+      if (!res.ok) throw new Error(res.statusText);
+      if (form.matches(".delete-form")) form.closest("tr")?.remove();
+      else setTimeout(refreshLive, 1500); // give the schedule a moment to reload
+    } catch (err) {
+      alert("Couldn't do that: " + err.message);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   // End recording: confirm, then stop it; the panel shows SAVING until the
   // files are written, then disappears.
   document.addEventListener("submit", async e => {
@@ -424,6 +447,7 @@
       syncListenButtons(); // same task as the morph, so its labels never show
       morph(document.getElementById("upcoming"), data.upcoming);
       morph(document.getElementById("mine"), data.mine);
+      document.getElementById("updated").textContent = data.updated;
       const recordingShows = new Set(data.recordingShows.map(String));
       browse.querySelectorAll("tbody tr").forEach(row => {
         const tag = row.querySelector(".rec-tag");
@@ -496,7 +520,7 @@
   <div class="live-main">
   <div class="live-head">
     <span class="badge">ON AIR</span>
-    <h2>{{if .ShowID}}<a href="/?add=1#show-{{.ShowID}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
+    <h2>{{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
     {{with .DJ}}<span class="muted">with {{.}}</span>{{end}}
     {{if not .Start.IsZero}}<span class="slot muted">{{clock .Start}} – {{clock .End}}</span>{{end}}
     <button type="button" class="listen" data-src="/listen" aria-pressed="false" aria-label="Listen to WCBN live">▶ Listen</button>
