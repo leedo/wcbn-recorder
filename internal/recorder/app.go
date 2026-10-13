@@ -40,6 +40,12 @@ type App struct {
 	status   stationStatus
 	statusAt time.Time
 
+	// The page's event streams wait on changed, which is closed (and replaced)
+	// whenever what the page shows changes, and end once done is closed.
+	changedMu sync.Mutex
+	changed   chan struct{}
+	done      chan struct{}
+
 	wake           chan struct{} // re-evaluate selections now
 	refreshNow     chan struct{} // re-fetch the schedule now
 	detailsRunning atomic.Bool
@@ -54,6 +60,8 @@ func NewApp(cfg *config.Config, store *store.Store) *App {
 		active:     map[string]*recording{},
 		wake:       make(chan struct{}, 1),
 		refreshNow: make(chan struct{}, 1),
+		changed:    make(chan struct{}),
+		done:       make(chan struct{}),
 	}
 	a.tap = newStationTap(cfg, a.recentAudio)
 	return a
@@ -64,6 +72,21 @@ func poke(c chan struct{}) {
 	case c <- struct{}{}:
 	default:
 	}
+}
+
+// notify wakes the page's event streams to send what's changed.
+func (a *App) notify() {
+	a.changedMu.Lock()
+	defer a.changedMu.Unlock()
+	close(a.changed)
+	a.changed = make(chan struct{})
+}
+
+// changes returns a channel that's closed at the next notify.
+func (a *App) changes() <-chan struct{} {
+	a.changedMu.Lock()
+	defer a.changedMu.Unlock()
+	return a.changed
 }
 
 // run polls the schedule and starts a recording whenever a selected show's
@@ -91,6 +114,7 @@ func (a *App) Run(ctx context.Context) {
 		case <-ctx.Done():
 			log.Printf("shutting down; finishing in-progress recordings")
 			a.tap.close() // end listeners' streams, so the web server can stop
+			close(a.done) // and the page's event streams
 			a.wg.Wait()
 			return
 		case <-a.refreshNow:
@@ -112,6 +136,12 @@ func (a *App) startDue(ctx context.Context, now time.Time) time.Duration {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	started := false
+	defer func() {
+		if started {
+			a.notify()
+		}
+	}()
 	for _, job := range jobs {
 		key := job.Event.Key()
 		if a.started[key] {
@@ -128,6 +158,7 @@ func (a *App) startDue(ctx context.Context, now time.Time) time.Duration {
 			continue
 		}
 		a.active[key] = rec
+		started = true
 		a.wg.Add(1)
 		go func() {
 			defer a.wg.Done()
@@ -137,6 +168,7 @@ func (a *App) startDue(ctx context.Context, now time.Time) time.Duration {
 			a.mu.Lock()
 			delete(a.active, key)
 			a.mu.Unlock()
+			a.notify()
 		}()
 	}
 	return wake
@@ -182,6 +214,7 @@ func (a *App) Refresh(ctx context.Context) bool {
 		a.lastRefresh = time.Now()
 	}
 	a.mu.Unlock()
+	a.notify()
 	if err != nil {
 		log.Printf("schedule refresh failed: %v", err)
 		return false

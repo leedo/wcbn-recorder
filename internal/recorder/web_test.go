@@ -1,6 +1,7 @@
 package recorder
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -246,14 +247,63 @@ func TestWebInPlaceActions(t *testing.T) {
 	if after, _ := app.store.Shows(context.Background()); len(after) != len(shows)-1 {
 		t.Errorf("delete didn't remove the show: %d -> %d", len(shows), len(after))
 	}
-	resp, err := http.Get(srv.URL + "/live")
+	var out struct{ Updated string }
+	firstEvent(t, srv.URL, &out)
+	if out.Updated != "just now" {
+		t.Errorf("updated = %q", out.Updated)
+	}
+}
+
+// The event stream sends a change as soon as it's made, not at the next
+// check for progress, and ends when the app shuts down.
+func TestWebEvents(t *testing.T) {
+	app, srv := testApp(t)
+	resp, err := http.Get(srv.URL + "/events")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	var out struct{ Updated string }
-	json.NewDecoder(resp.Body).Decode(&out)
-	if out.Updated != "just now" {
-		t.Errorf("updated = %q", out.Updated)
+	type event struct{ Mine string }
+	events := make(chan event)
+	go func() {
+		defer close(events)
+		sc := bufio.NewScanner(resp.Body)
+		sc.Buffer(nil, 1<<20)
+		for sc.Scan() {
+			if data, ok := strings.CutPrefix(sc.Text(), "data: "); ok {
+				var e event
+				json.Unmarshal([]byte(data), &e)
+				events <- e
+			}
+		}
+	}()
+	next := func() (event, bool) {
+		t.Helper()
+		select {
+		case e, ok := <-events:
+			return e, ok
+		case <-time.After(liveInterval / 2):
+			t.Fatal("no event")
+			return event{}, false
+		}
+	}
+	if e, _ := next(); strings.Contains(e.Mine, "Train To Skaville") {
+		t.Fatal("show listed before it was added")
+	}
+
+	shows, _ := app.store.Shows(context.Background())
+	for _, sh := range shows {
+		if sh.Title == "Train To Skaville" {
+			app.store.SetRecord(context.Background(), sh.ID, true)
+		}
+	}
+	app.notify()
+	if e, _ := next(); !strings.Contains(e.Mine, "Train To Skaville") {
+		t.Errorf("added show missing from Your shows:\n%s", e.Mine)
+	}
+
+	close(app.done)
+	if _, ok := next(); ok {
+		t.Error("stream still open after shutdown")
 	}
 }

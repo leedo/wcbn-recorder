@@ -97,8 +97,10 @@ again during the current airing by itself. To record the rest of the airing
 after all, remove the show and add it back: recording resumes in the same
 folder (see Resuming below).
 
-The panel refreshes every 5 seconds while the page is visible, and right after
-you select a show. An expanded song list stays open across refreshes.
+The server pushes updates to the page (server-sent events, at `/events`) while
+it's visible: right away when a recording starts or ends, a show is selected,
+or the schedule is refreshed, and every couple of seconds while recording. An
+expanded song list stays open across updates.
 
 Show details come from Spinitron. The calendar is re-read every
 `poll_interval`, and each show's page is refetched once a day. **Refresh now**

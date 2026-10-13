@@ -2,7 +2,6 @@ package recorder
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -98,18 +97,13 @@ func TestWebLive(t *testing.T) {
 		}
 	}
 
-	resp, err := http.Get(srv.URL + "/live")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
 	var out struct {
 		Live, Upcoming string
 		Recording      int
 	}
-	json.NewDecoder(resp.Body).Decode(&out)
-	if out.Recording != 1 || !strings.Contains(out.Live, "Pressure Drop") || resp.Header.Get("Cache-Control") != "no-store" {
-		t.Errorf("/live = %+v", out)
+	header := firstEvent(t, srv.URL, &out)
+	if out.Recording != 1 || !strings.Contains(out.Live, "Pressure Drop") || header.Get("Content-Type") != "text/event-stream" {
+		t.Errorf("/events = %+v", out)
 	}
 }
 
@@ -361,16 +355,11 @@ func TestRecordingTagClearsAfterEnd(t *testing.T) {
 
 	live := func() (mine, upcoming string, tagged []int64) {
 		t.Helper()
-		resp, err := http.Get(srv.URL + "/live")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer resp.Body.Close()
 		var out struct {
 			Mine, Upcoming string
 			RecordingShows []int64
 		}
-		json.NewDecoder(resp.Body).Decode(&out)
+		firstEvent(t, srv.URL, &out)
 		return out.Mine, out.Upcoming, out.RecordingShows
 	}
 	if mine, _, tagged := live(); !strings.Contains(mine, "● recording") || len(tagged) != 1 || tagged[0] != id {

@@ -321,7 +321,6 @@
           row.scrollIntoView({ block: "nearest" });
         }
       }
-      refreshLive(); // selecting a show that's on the air starts recording right away
     } catch (err) {
       alert("Couldn't update: " + err.message);
     } finally {
@@ -413,7 +412,6 @@
       const res = await fetch(form.action, { method: "POST", headers: { Accept: "application/json" } });
       if (!res.ok) throw new Error(res.statusText);
       if (form.matches(".delete-form")) form.closest("tr")?.remove();
-      else setTimeout(refreshLive, 1500); // give the schedule a moment to reload
     } catch (err) {
       alert("Couldn't do that: " + err.message);
     } finally {
@@ -434,8 +432,8 @@
       if (!res.ok) throw new Error(res.statusText);
     } catch (err) {
       alert("Couldn't end the recording: " + err.message);
+      form.querySelector("button").disabled = false;
     }
-    refreshLive();
   });
 
   document.addEventListener("click", e => {
@@ -444,28 +442,42 @@
     if (b.getAttribute("aria-pressed") === "true") stopListening(); else startListening(b.dataset.src);
   });
 
-  // Keep the live recording panel current, preserving which song lists are open.
+  // Keep the page current from the server's event stream, preserving which
+  // song lists are open. The stream is closed while the tab is hidden; on
+  // reconnecting, the server sends the current state straight away.
   const live = document.getElementById("live");
-  async function refreshLive() {
-    if (document.hidden) return;
-    try {
-      const res = await fetch("/live", { headers: { Accept: "application/json" } });
-      if (!res.ok) return;
-      const data = await res.json();
-      morph(live, data.live);
-      syncListenButtons(); // same task as the morph, so its labels never show
-      morph(document.getElementById("upcoming"), data.upcoming);
-      morph(document.getElementById("mine"), data.mine);
-      document.getElementById("updated").textContent = data.updated;
-      const recordingShows = new Set(data.recordingShows.map(String));
-      browse.querySelectorAll("tbody tr").forEach(row => {
-        const tag = row.querySelector(".rec-tag");
-        if (tag) tag.hidden = !recordingShows.has(row.id.replace("show-", ""));
-      });
-    } catch { /* server restarting; try again next tick */ }
+  function update(data) {
+    morph(live, data.live);
+    syncListenButtons(); // same task as the morph, so its labels never show
+    morph(document.getElementById("upcoming"), data.upcoming);
+    morph(document.getElementById("mine"), data.mine);
+    document.getElementById("updated").textContent = data.updated;
+    const recordingShows = new Set(data.recordingShows.map(String));
+    browse.querySelectorAll("tbody tr").forEach(row => {
+      const tag = row.querySelector(".rec-tag");
+      if (tag) tag.hidden = !recordingShows.has(row.id.replace("show-", ""));
+    });
   }
-  setInterval(refreshLive, 5000);
-  document.addEventListener("visibilitychange", refreshLive);
+  let events = null;
+  function connect() {
+    if (document.hidden) {
+      events?.close();
+      events = null;
+      return;
+    }
+    if (events) return;
+    events = new EventSource("/events");
+    events.onmessage = e => update(JSON.parse(e.data));
+    // EventSource reconnects on its own after a dropped connection, but gives
+    // up after an error response (say a proxy's while the server restarts).
+    events.onerror = () => {
+      if (events.readyState !== EventSource.CLOSED) return;
+      events = null;
+      setTimeout(connect, 5000);
+    };
+  }
+  connect();
+  document.addEventListener("visibilitychange", connect);
 
   // Client-side filtering.
   const q = document.getElementById("q"), cat = document.getElementById("category");

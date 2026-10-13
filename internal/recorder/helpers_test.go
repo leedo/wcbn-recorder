@@ -1,8 +1,12 @@
 package recorder
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/json"
+	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"wcbn-recorder/internal/store"
@@ -54,4 +58,27 @@ func testStore(t *testing.T) *store.Store {
 	}
 	t.Cleanup(func() { s.Close() })
 	return s
+}
+
+// firstEvent returns the data of the first message on the page's event
+// stream, decoded into v, and the response's headers.
+func firstEvent(t *testing.T, url string, v any) http.Header {
+	t.Helper()
+	resp, err := http.Get(url + "/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	sc := bufio.NewScanner(resp.Body)
+	sc.Buffer(nil, 1<<20)
+	for sc.Scan() {
+		if data, ok := strings.CutPrefix(sc.Text(), "data: "); ok {
+			if err := json.Unmarshal([]byte(data), v); err != nil {
+				t.Fatal(err)
+			}
+			return resp.Header
+		}
+	}
+	t.Fatalf("no event: %v", sc.Err())
+	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"regexp"
@@ -23,6 +24,11 @@ import (
 
 //go:embed templates/*.html
 var templateFS embed.FS
+
+const (
+	liveInterval      = 2 * time.Second  // how often the page's event streams check for progress
+	keepAliveInterval = 30 * time.Second // the longest an event stream goes without sending anything
+)
 
 //go:embed favicon.png
 var favicon []byte
@@ -84,27 +90,21 @@ func (a *App) Handler() http.Handler {
 		data.Browse = r.URL.Query().Get("add") == "1" || data.Selected == 0
 		render(w, tmpl, "index.html", data)
 	})
-	// The page polls this to keep the live recording panel current.
-	mux.HandleFunc("GET /live", func(w http.ResponseWriter, r *http.Request) {
-		data, err := a.pageData(r.Context())
+	// liveJSON renders the parts of the page that change on their own.
+	liveJSON := func(ctx context.Context) ([]byte, error) {
+		data, err := a.pageData(ctx)
 		if err != nil {
-			httpError(w, err)
-			return
+			return nil, err
 		}
-		var live, upcoming bytes.Buffer
+		var live, upcoming, mine bytes.Buffer
 		if err := tmpl.ExecuteTemplate(&live, "live", data); err != nil {
-			httpError(w, err)
-			return
+			return nil, err
 		}
 		if err := tmpl.ExecuteTemplate(&upcoming, "upcoming", data); err != nil {
-			httpError(w, err)
-			return
+			return nil, err
 		}
-		w.Header().Set("Cache-Control", "no-store")
-		var mine bytes.Buffer
 		if err := tmpl.ExecuteTemplate(&mine, "mine", data); err != nil {
-			httpError(w, err)
-			return
+			return nil, err
 		}
 		recordingShows := []int64{} // for the ● recording tags in the full list
 		for _, sh := range data.Shows {
@@ -112,11 +112,52 @@ func (a *App) Handler() http.Handler {
 				recordingShows = append(recordingShows, sh.ID)
 			}
 		}
-		writeJSON(w, map[string]any{
+		return json.Marshal(map[string]any{
 			"live": live.String(), "upcoming": upcoming.String(), "mine": mine.String(),
 			"recording": len(data.Recording), "recordingShows": recordingShows,
 			"updated": ago(data.LastRefresh), "refreshErr": data.RefreshErr,
 		})
+	}
+	// Server-sent events keep the page current: the state is sent on connect,
+	// then again whenever it changes. Changes are signalled by notify; progress
+	// (recorded time and size, songs) is checked for every liveInterval.
+	mux.HandleFunc("GET /events", func(w http.ResponseWriter, r *http.Request) {
+		rc := http.NewResponseController(w)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-store")
+		var last []byte
+		lastSent := time.Now()
+		tick := time.NewTicker(liveInterval)
+		defer tick.Stop()
+		for {
+			changed := a.changes()
+			msg, err := liveJSON(r.Context())
+			if err != nil {
+				log.Printf("web: events: %v", err)
+			}
+			var send string
+			switch {
+			case err == nil && !bytes.Equal(msg, last):
+				send, last = "data: "+string(msg)+"\n\n", msg
+			case time.Since(lastSent) >= keepAliveInterval:
+				send = ": ping\n\n" // so idle connections aren't dropped
+			}
+			if send != "" {
+				io.WriteString(w, send)
+				if rc.Flush() != nil {
+					return
+				}
+				lastSent = time.Now()
+			}
+			select {
+			case <-r.Context().Done():
+				return
+			case <-a.done:
+				return
+			case <-changed:
+			case <-tick.C:
+			}
+		}
 	})
 	// Listen to the station, through the shared connection; the same stream
 	// whether or not anything is being recorded.
@@ -130,6 +171,7 @@ func (a *App) Handler() http.Handler {
 			return
 		}
 		rec.Stop()
+		a.notify()
 		if wantsJSON(r) {
 			writeJSON(w, map[string]any{"stopped": true})
 			return
@@ -157,6 +199,7 @@ func (a *App) Handler() http.Handler {
 		if record {
 			a.startNow() // start right away if the show is on now
 		}
+		a.notify()
 		if !wantsJSON(r) {
 			// Without JS, go back to where the button was pressed.
 			target := "/#your-shows"
@@ -199,6 +242,7 @@ func (a *App) Handler() http.Handler {
 			httpError(w, err)
 			return
 		}
+		a.notify()
 		if wantsJSON(r) {
 			writeJSON(w, map[string]any{"id": id})
 			return
