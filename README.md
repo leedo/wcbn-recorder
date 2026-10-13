@@ -10,12 +10,25 @@ runtime dependencies.
 ## Usage
 
 ```sh
-go build -o wcbn-recorder .
+go build -o wcbn-recorder ./cmd/wcbn-recorder
 cp config.example.json config.json   # set destination
 ./wcbn-recorder -config config.json          # run; then open http://127.0.0.1:8080/
 ./wcbn-recorder -config config.json -list    # show upcoming selected recordings
 ./wcbn-recorder -config config.json -test 30s  # record a short clip to verify the setup
 ./wcbn-recorder -config config.json -shows shows.txt  # list every show with its description
+```
+
+## Code layout
+
+```
+cmd/wcbn-recorder/    the command: flags and startup
+internal/config/      config file loading
+internal/httpx/       HTTP client that fills in missing TLS intermediates
+internal/spinitron/   Spinitron calendar and show pages
+internal/store/       SQLite: show details and selections
+internal/mpeg/        MP3 frames and gapless Info frames
+internal/id3/         ID3v2.4 tag writer
+internal/recorder/    scheduler, recording, song files, web UI (templates/)
 ```
 
 ## Web UI
@@ -130,7 +143,7 @@ disabled, or run it on an always-on machine (see systemd below).
 service:
 
 ```sh
-GOOS=linux GOARCH=amd64 go build -o wcbn-recorder .   # or arm64
+GOOS=linux GOARCH=amd64 go build -o wcbn-recorder ./cmd/wcbn-recorder   # or arm64
 sudo install -m 755 wcbn-recorder /usr/local/bin/
 sudo useradd --system --home-dir /var/lib/wcbn-recorder --shell /usr/sbin/nologin wcbn-recorder
 sudo install -d /etc/wcbn-recorder
@@ -247,7 +260,7 @@ Broken images fall back to the station logo.
 
 ## Metadata
 
-The whole-show file gets an ID3v2.4 tag in front of the audio (see `id3.go`).
+The whole-show file gets an ID3v2.4 tag in front of the audio (see `internal/id3`).
 It holds:
 
 - **title:** show name plus date
