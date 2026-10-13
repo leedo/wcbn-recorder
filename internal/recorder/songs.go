@@ -84,7 +84,8 @@ func (r *recording) songWriter(ctx context.Context) {
 	}
 	defer src.Close()
 
-	var playlist []string
+	// A resumed recording adds to the earlier recording's playlist.
+	playlist := playlistEntries(filepath.Join(r.out.trackDir, r.out.base+".m3u8"))
 	for seg := range r.songs {
 		meta := r.showMetadata(ctx)
 		if meta.Art != nil {
@@ -128,7 +129,7 @@ func (r *recording) writeSong(meta showMeta, src io.ReaderAt, s segment) ([]stri
 	if artist != "" {
 		name = artist + " - " + title
 	}
-	file := fmt.Sprintf("%02d - %s.mp3", s.n, truncateName(sanitize(name), 150))
+	file := filepath.Base(uniquePath(filepath.Join(r.out.trackDir, fmt.Sprintf("%02d - %s.mp3", s.n, truncateName(sanitize(name), 150))), ".mp3"))
 
 	var tag id3.Tag
 	tag.Text("TIT2", title)

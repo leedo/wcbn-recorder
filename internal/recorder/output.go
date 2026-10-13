@@ -164,7 +164,7 @@ func (r *recording) writeShowFile(meta showMeta, part, path string) error {
 		return err
 	}
 	defer src.Close()
-	return writeTagged(path, &tag, src)
+	return writeTagged(uniquePath(path, ".mp3"), &tag, src) // a resumed recording adds a second one
 }
 
 // segment is the stretch of audio between one stream title change and the next.

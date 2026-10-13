@@ -216,18 +216,79 @@ func TestTruncateName(t *testing.T) {
 	}
 }
 
-func TestUniqueBase(t *testing.T) {
+func TestChooseBase(t *testing.T) {
+	cfg := &config.Config{TrackFiles: true}
 	dir := t.TempDir()
-	if got := uniqueBase(dir, "Show - 2026-10-13", "1900"); got != "Show - 2026-10-13" {
-		t.Errorf("got %q", got)
+	name := "Show - 2026-10-13"
+	start := func(airing string) (string, bool) {
+		base, resume := chooseBase(cfg, dir, name, "1900", airing)
+		out := outputPaths(cfg, dir, base)
+		os.MkdirAll(out.trackDir, 0o755)
+		os.WriteFile(markerPath(out), []byte(airing+"\n"), 0o644)
+		return base, resume
 	}
-	os.Mkdir(filepath.Join(dir, "Show - 2026-10-13"), 0o755) // only the track folder exists
-	if got := uniqueBase(dir, "Show - 2026-10-13", "1900"); got != "Show - 2026-10-13 1900" {
-		t.Errorf("got %q", got)
+	if base, resume := start("show|100"); base != name || resume {
+		t.Errorf("first airing: %q, resume %v", base, resume)
 	}
-	os.WriteFile(filepath.Join(dir, "Show - 2026-10-13 1900.mp3"), nil, 0o644)
-	if got := uniqueBase(dir, "Show - 2026-10-13", "1900"); got != "Show - 2026-10-13 1900-2" {
-		t.Errorf("got %q", got)
+	// The same airing again (a restart) resumes in the same folder.
+	if base, resume := start("show|100"); base != name || !resume {
+		t.Errorf("same airing: %q, resume %v", base, resume)
+	}
+	// Another airing that day gets its own folder, and so does a third.
+	if base, resume := start("show|200"); base != name+" 1900" || resume {
+		t.Errorf("second airing: %q, resume %v", base, resume)
+	}
+	if base, _ := start("show|300"); base != name+" 1900-2" {
+		t.Errorf("third airing: %q", base)
+	}
+	// ...and each resumes in its own folder.
+	if base, resume := chooseBase(cfg, dir, name, "1900", "show|200"); base != name+" 1900" || !resume {
+		t.Errorf("second airing again: %q, resume %v", base, resume)
+	}
+	// A folder from before markers existed is never taken over.
+	other := t.TempDir()
+	os.Mkdir(filepath.Join(other, name), 0o755)
+	if base, resume := chooseBase(cfg, other, name, "1900", "show|100"); base != name+" 1900" || resume {
+		t.Errorf("unmarked folder: %q, resume %v", base, resume)
+	}
+}
+
+func TestUniquePath(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, ".Show - 2026-10-13.mp3")
+	if got := uniquePath(p, ".mp3"); got != p {
+		t.Errorf("free name changed: %s", got)
+	}
+	os.WriteFile(p, nil, 0o644)
+	if got := uniquePath(p, ".mp3"); got != filepath.Join(dir, ".Show - 2026-10-13 2.mp3") {
+		t.Errorf("got %s", got)
+	}
+	os.WriteFile(filepath.Join(dir, ".Show - 2026-10-13 2.mp3"), nil, 0o644)
+	if got := uniquePath(p, ".mp3"); got != filepath.Join(dir, ".Show - 2026-10-13 3.mp3") {
+		t.Errorf("got %s", got)
+	}
+	part := filepath.Join(dir, ".Show.mp3.part")
+	os.WriteFile(part, nil, 0o644)
+	if got := uniquePath(part, ".mp3.part"); got != filepath.Join(dir, ".Show 2.mp3.part") {
+		t.Errorf("part: %s", got)
+	}
+}
+
+func TestResumeHelpers(t *testing.T) {
+	dir := t.TempDir()
+	for _, f := range []string{"01 - A - One.mp3", "02 - B - Two.mp3", "10 - C - Ten.mp3", ".hidden 99.mp3", "cover.jpg", "Show.m3u8"} {
+		os.WriteFile(filepath.Join(dir, f), nil, 0o644)
+	}
+	if n := lastSongNumber(dir); n != 10 {
+		t.Errorf("last song = %d", n)
+	}
+	m3u := filepath.Join(dir, "Show.m3u8")
+	os.WriteFile(m3u, []byte("#EXTM3U\n#PLAYLIST:Show (2026-10-13)\n#EXTINF:180,A - One\n01 - A - One.mp3\n"), 0o644)
+	if got := strings.Join(playlistEntries(m3u), "|"); got != "#EXTINF:180,A - One|01 - A - One.mp3" {
+		t.Errorf("entries = %q", got)
+	}
+	if playlistEntries(filepath.Join(dir, "missing.m3u8")) != nil {
+		t.Error("missing playlist should have no entries")
 	}
 }
 

@@ -93,10 +93,8 @@ up frame for frame: nothing is repeated or skipped.
 recorded so far is saved as usual (whole-show file, songs and playlist), and the
 show stays selected, so its next airing is recorded normally. It isn't started
 again during the current airing by itself. To record the rest of the airing
-after all, remove the show and add it back; the new recording gets the show's
-start time added to its name (e.g. `<show> - YYYY-MM-DD 1500`), so the earlier
-one is kept. Restarting the recorder while the show is on also starts a new
-recording.
+after all, remove the show and add it back: recording resumes in the same
+folder (see Resuming below).
 
 The panel refreshes every 5 seconds while the page is visible, and right after
 you select a show. An expanded song list stays open across refreshes.
@@ -136,14 +134,27 @@ it; `ls -a` or your file manager's "show hidden files" reveals it. With
 `track_files` off, the whole show is the only output and is written visibly
 instead, as `<destination>/<program>/<show> - YYYY-MM-DD.mp3`.
 
-If a recording with that name already exists, the start time is appended
-(e.g. `<show> - YYYY-MM-DD 1900`). Set `show_file` or `track_files` to `false`
+Set `show_file` or `track_files` to `false`
 to skip either output. While recording, audio goes to a hidden `.….mp3.part`
 file in the show's folder (in the program folder when `track_files` is off).
 Each song file is written as soon as the stream moves on to the next song, so
 the folder fills up during the show, and the playlist is updated after each
-one; only the last song and the whole-show file are written when the show ends. Ctrl-C / SIGTERM stops gracefully: in-progress recordings are
-tagged and kept.
+one; only the last song and the whole-show file are written when the show ends.
+Ctrl-C / SIGTERM stops gracefully: in-progress recordings are tagged and kept.
+
+### Resuming
+
+If recording of an airing starts again (the recorder was restarted while the
+show was on, or the show was ended and added back), it resumes in the same
+folder. Song numbering carries on from the last song there, the playlist is
+extended, and the song playing at the time of the restart ends up in two files
+(before and after), with whatever the recorder missed while it was down. Files
+that would otherwise clash get a number before the extension, so the second
+whole-show backup is `.<show> - YYYY-MM-DD 2.mp3`. Each recording leaves a
+hidden `.<show> - YYYY-MM-DD.airing` marker naming its airing, which is how
+the recorder tells a resume from another airing of the same show that day.
+Another airing gets its own folder, with the start time added
+(`<show> - YYYY-MM-DD 0300`).
 
 The machine has to stay awake: nothing is recorded while it sleeps, and the
 recorder reconnects when it wakes. On a laptop, keep it plugged in with sleep

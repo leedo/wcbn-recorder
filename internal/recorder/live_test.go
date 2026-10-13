@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -300,8 +301,9 @@ func TestReaddAfterEnd(t *testing.T) {
 	if second == nil {
 		t.Fatal("re-adding the show didn't start recording")
 	}
-	if second == first || second.out.base == first.out.base {
-		t.Errorf("second recording should get its own files: %q vs %q", second.out.base, first.out.base)
+	// It's the same airing, so it resumes in the same folder.
+	if second == first || second.out.trackDir != first.out.trackDir || !second.resumed {
+		t.Errorf("second recording should resume in %q, got %q (resumed %v)", first.out.trackDir, second.out.trackDir, second.resumed)
 	}
 	if _, err := os.Stat(first.out.showFile); err != nil {
 		t.Errorf("first recording's file: %v", err)
@@ -309,6 +311,25 @@ func TestReaddAfterEnd(t *testing.T) {
 	waitFor("audio", func() bool { return second.bytesWritten() > 0 })
 	second.Stop()
 	waitFor("the second recording to finish", func() bool { return active() == nil })
+
+	// Both recordings' files are in the one folder: the songs numbered on,
+	// the playlist extended, and the second backup numbered rather than
+	// replacing the first.
+	entries, _ := os.ReadDir(first.out.trackDir)
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	base := first.out.base
+	for _, want := range []string{"." + base + ".mp3", "." + base + " 2.mp3", "01 - Train To Skaville.mp3", "02 - Train To Skaville.mp3", base + ".m3u8"} {
+		if !slices.Contains(names, want) {
+			t.Errorf("missing %q in %v", want, names)
+		}
+	}
+	m3u, _ := os.ReadFile(filepath.Join(first.out.trackDir, base+".m3u8"))
+	if !strings.Contains(string(m3u), "01 - Train To Skaville.mp3\n") || !strings.Contains(string(m3u), "02 - Train To Skaville.mp3\n") {
+		t.Errorf("playlist should list both songs:\n%s", m3u)
+	}
 }
 
 // After End recording, the next refresh drops the ● recording tag from Your

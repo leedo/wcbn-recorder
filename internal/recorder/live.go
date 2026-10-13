@@ -68,8 +68,8 @@ func (r *recording) status(now time.Time) liveStatus {
 		}
 		title, artist := splitSong(m.title)
 		st.Tracks = append(st.Tracks, liveTrack{
-			N: len(st.Tracks) + 1, Title: title, Artist: artist, At: m.at,
-			DurationMs: end - m.ms, Current: last, Saved: r.songsSaved[len(st.Tracks)+1],
+			N: r.songBase + len(st.Tracks) + 1, Title: title, Artist: artist, At: m.at,
+			DurationMs: end - m.ms, Current: last, Saved: r.songsSaved[r.songBase+len(st.Tracks)+1],
 		})
 	}
 	if n := len(st.Tracks); n > 0 {

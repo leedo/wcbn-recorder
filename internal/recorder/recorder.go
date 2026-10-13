@@ -6,7 +6,6 @@ package recorder
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -71,7 +70,9 @@ type recording struct {
 	finishing  bool
 	cancel     func()       // stops Run; set once Run starts
 	stopped    bool         // ended early from the UI
-	songCount  int          // songs queued for writing
+	resumed    bool         // continuing an earlier recording of the same airing
+	songBase   int          // songs already in the folder from that recording
+	songCount  int          // songs queued for writing, including songBase
 	songsSaved map[int]bool // song numbers written to files
 
 	// Song files are written by a background goroutine as songs finish.
@@ -104,25 +105,39 @@ func startRecording(cfg *config.Config, job Job) (*recording, error) {
 		return nil, err
 	}
 	date := job.Event.Start.In(cfg.Location)
-	base := uniqueBase(dir, sanitize(fmt.Sprintf("%s - %s", job.Event.Title, date.Format("2006-01-02"))), date.Format("1504"))
+	airing := job.Event.Key()
+	base, resume := chooseBase(cfg, dir, sanitize(fmt.Sprintf("%s - %s", job.Event.Title, date.Format("2006-01-02"))), date.Format("1504"), airing)
 	out := outputPaths(cfg, dir, base)
-	part := out.part
-	if err := os.MkdirAll(filepath.Dir(part), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(out.part), 0o755); err != nil {
 		return nil, err
 	}
+	if err := os.WriteFile(markerPath(out), []byte(airing+"\n"), 0o644); err != nil {
+		return nil, err
+	}
+	part := uniquePath(out.part, ".mp3.part") // a crash can leave one behind
 
 	f, err := os.Create(part)
 	if err != nil {
 		return nil, err
 	}
-	return &recording{id: recordingIDs.Add(1), cfg: cfg, job: job, out: out, part: part, file: f, started: time.Now(), audio: mpeg.NewFrameWriter(f)}, nil
+	rec := &recording{id: recordingIDs.Add(1), cfg: cfg, job: job, out: out, part: part, file: f, started: time.Now(), audio: mpeg.NewFrameWriter(f), resumed: resume}
+	if resume && cfg.TrackFiles {
+		// Carry on the song numbering and playlist of the earlier recording.
+		rec.songBase = lastSongNumber(out.trackDir)
+		rec.songCount = rec.songBase
+	}
+	return rec, nil
 }
 
 // Run records until job.Until (or ctx is cancelled), reconnecting as needed,
 // then writes the outputs.
 func (r *recording) Run(ctx context.Context) error {
 	job, out := r.job, r.out
-	log.Printf("recording %q until %s -> %s", job.Event.Title, job.Until.In(r.cfg.Location).Format(time.Kitchen), out.trackDir)
+	verb := "recording"
+	if r.resumed {
+		verb = "resuming"
+	}
+	log.Printf("%s %q until %s -> %s", verb, job.Event.Title, job.Until.In(r.cfg.Location).Format(time.Kitchen), out.trackDir)
 	recCtx, cancel := context.WithDeadline(ctx, job.Until)
 	defer cancel()
 	r.mu.Lock()
@@ -166,16 +181,20 @@ func (r *recording) Run(ctx context.Context) error {
 	if r.audio.Written() == 0 {
 		r.stopSongWriter()
 		os.Remove(r.part)
-		os.Remove(out.trackDir) // only if empty: nothing else was written
+		if !r.resumed {
+			os.Remove(markerPath(out))
+			os.Remove(out.trackDir) // only if empty: nothing else was written
+		}
 		return fmt.Errorf("no audio received for %q", job.Event.Title)
 	}
 	// Finalize even if we were interrupted by shutdown so partial shows keep their tags.
 	if err := r.finalize(context.WithoutCancel(ctx), r.part, out); err != nil {
-		log.Printf("writing output failed (%v); keeping untagged audio as %s", err, out.showFile)
-		if err := os.MkdirAll(filepath.Dir(out.showFile), 0o755); err != nil {
+		keep := uniquePath(out.showFile, ".mp3")
+		log.Printf("writing output failed (%v); keeping untagged audio as %s", err, keep)
+		if err := os.MkdirAll(filepath.Dir(keep), 0o755); err != nil {
 			return err
 		}
-		if err := os.Rename(r.part, out.showFile); err != nil {
+		if err := os.Rename(r.part, keep); err != nil {
 			return err
 		}
 	}
@@ -355,30 +374,4 @@ func sanitize(s string) string {
 		return "untitled"
 	}
 	return s
-}
-
-// uniqueBase returns a name for both the show file (name.mp3) and the track
-// folder (name/) that doesn't collide with an earlier recording, appending
-// suffix (then a number) if needed.
-func uniqueBase(dir, name, suffix string) string {
-	free := func(n string) bool {
-		for _, p := range []string{n + ".mp3", n} {
-			if _, err := os.Stat(filepath.Join(dir, p)); !errors.Is(err, os.ErrNotExist) {
-				return false
-			}
-		}
-		return true
-	}
-	if free(name) {
-		return name
-	}
-	for i := 1; ; i++ {
-		n := name + " " + suffix
-		if i > 1 {
-			n = fmt.Sprintf("%s %s-%d", name, suffix, i)
-		}
-		if free(n) {
-			return n
-		}
-	}
 }
