@@ -379,19 +379,28 @@
       b.textContent = !on ? "▶ Listen" : listenState === "playing" ? "■ Stop listening" : "… Connecting";
     });
   }
+  // ?listen=<src> records what's playing, so reloading the page resumes it.
+  function setListenParam(src) {
+    const url = new URL(location);
+    if (src) url.searchParams.set("listen", src); else url.searchParams.delete("listen");
+    history.replaceState(null, "", url);
+  }
   function stopListening() {
     player.pause();
     player.removeAttribute("src");
     player.load();
     listening = null;
+    setListenParam(null);
     syncListenButtons();
   }
   function startListening(src) {
     listening = src;
     listenState = "connecting";
+    setListenParam(src);
     player.src = src + "?t=" + Date.now(); // never reuse a cached response
     player.play().catch(err => {
-      if (err.name !== "AbortError") alert("Couldn't play the stream: " + err.message);
+      // NotAllowedError: the browser blocked autoplay on reload; the button still works.
+      if (err.name !== "AbortError" && err.name !== "NotAllowedError") alert("Couldn't play the stream: " + err.message);
       stopListening();
     });
     syncListenButtons();
@@ -441,6 +450,11 @@
     if (!b) return;
     if (b.getAttribute("aria-pressed") === "true") stopListening(); else startListening(b.dataset.src);
   });
+  {
+    // Resume after a reload, if what was playing still has a Listen button.
+    const src = new URLSearchParams(location.search).get("listen");
+    if (src && [...document.querySelectorAll("#live button.listen")].some(b => b.dataset.src === src)) startListening(src);
+  }
 
   // Keep the page current from the server's event stream, preserving which
   // song lists are open. The stream is closed while the tab is hidden; on
