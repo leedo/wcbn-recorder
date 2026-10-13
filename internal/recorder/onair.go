@@ -3,9 +3,7 @@ package recorder
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"log"
-	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -105,44 +103,4 @@ func fetchStationTitle(ctx context.Context, streamURL string) (string, error) {
 		}
 	}
 	return "", nil
-}
-
-// serveLiveStream relays the station's stream to a listener, through the
-// recorder like recordings are, so it works wherever the UI does.
-func (a *App) serveLiveStream(w http.ResponseWriter, r *http.Request) {
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, a.cfg.StreamURL, nil)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	req.Header.Set("User-Agent", "wcbn-recorder/1.0") // no Icy-MetaData: plain MP3
-	resp, err := httpx.Client.Do(req)
-	if err != nil {
-		http.Error(w, "couldn't reach the station", http.StatusBadGateway)
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		http.Error(w, "the station returned "+resp.Status, http.StatusBadGateway)
-		return
-	}
-	w.Header().Set("Content-Type", "audio/mpeg")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(http.StatusOK)
-	io.Copy(flushWriter{w, http.NewResponseController(w)}, resp.Body)
-}
-
-// flushWriter sends each chunk to the listener as soon as it arrives.
-type flushWriter struct {
-	w  io.Writer
-	rc *http.ResponseController
-}
-
-func (f flushWriter) Write(p []byte) (int, error) {
-	n, err := f.w.Write(p)
-	if err == nil {
-		err = f.rc.Flush()
-	}
-	return n, err
 }

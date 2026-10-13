@@ -33,6 +33,7 @@ type App struct {
 	started     map[string]bool
 	active      map[string]*recording
 	runCtx      context.Context // the scheduler's context, once run has started
+	tap         *stationTap     // the shared station connection for listeners
 
 	// The station's current stream title, for the "On air" panel; cached.
 	titleMu sync.Mutex
@@ -46,7 +47,7 @@ type App struct {
 }
 
 func NewApp(cfg *config.Config, store *store.Store) *App {
-	return &App{
+	a := &App{
 		cfg:        cfg,
 		store:      store,
 		started:    map[string]bool{},
@@ -54,6 +55,8 @@ func NewApp(cfg *config.Config, store *store.Store) *App {
 		wake:       make(chan struct{}, 1),
 		refreshNow: make(chan struct{}, 1),
 	}
+	a.tap = newStationTap(cfg, a.recentAudio)
+	return a
 }
 
 func poke(c chan struct{}) {
@@ -87,6 +90,7 @@ func (a *App) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			log.Printf("shutting down; finishing in-progress recordings")
+			a.tap.close() // end listeners' streams, so the web server can stop
 			a.wg.Wait()
 			return
 		case <-a.refreshNow:

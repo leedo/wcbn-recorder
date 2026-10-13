@@ -45,7 +45,7 @@ func fakeIcecast(t *testing.T, status string) *httptest.Server {
 			http.NotFound(w, r)
 		}
 	}))
-	t.Cleanup(srv.Close)
+	t.Cleanup(func() { srv.CloseClientConnections(); srv.Close() })
 	return srv
 }
 
@@ -80,14 +80,14 @@ func TestWebOnAir(t *testing.T) {
 
 	page := get(t, srv.URL+"/")
 	for _, want := range []string{`class="card live-card onair"`, "ON AIR", "Train To Skaville", "with brian tomsic",
-		"West Coast Blues", "Blind Blake", `data-src="/listen/live"`, "+ Record this show", `name="from" value="onair"`} {
+		"West Coast Blues", "Blind Blake", `data-src="/listen"`, "+ Record this show", `name="from" value="onair"`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("On air card missing %q", want)
 		}
 	}
 
 	// Listen relays the station's audio.
-	resp, err := http.Get(srv.URL + "/listen/live")
+	resp, err := http.Get(srv.URL + "/listen")
 	if err != nil {
 		t.Fatal(err)
 	}

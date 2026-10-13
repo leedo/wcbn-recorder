@@ -57,10 +57,7 @@ and the song playing now (read from the station's Icecast status page, at most
 every 10 seconds). **+ Record this show** selects the program and starts
 recording it immediately (it reads **● Record now** if the show is already
 selected, for example after ending a recording). **▶ Listen** plays the station
-live, relayed through the recorder like recordings are, so it works over an SSH
-tunnel and isn't affected by the station's incomplete certificate chain. Live
-listening takes about 5 seconds to start in Chrome: the station sends only
-about 1.6 seconds of audio up front, and Chrome waits for more before playing.
+(see Listening below).
 
 While a show is recording, a live panel sits at the top of the page. It shows:
 
@@ -73,11 +70,24 @@ While a show is recording, a live panel sits at the top of the page. It shows:
 - **songs recorded so far:** an expandable list in air order, numbered the same
   way as the song files
 
-**▶ Listen** plays the show from the recording itself: it starts about 5
-seconds behind live and follows the audio as it's recorded, so you hear exactly
-what's being saved. It doesn't open another connection to WCBN, and it works
-wherever the UI does, including over an SSH tunnel. **■ Stop listening**
-disconnects, and listening again picks up at the live edge.
+### Listening
+
+**▶ Listen**, on either panel, plays the station through the recorder at
+`/listen`. It's one continuous stream, whatever is or isn't being recorded, so
+it keeps playing when a recording starts or ends and when the station moves on
+to the next show. **■ Stop listening** disconnects. Because it goes through the
+recorder, it works over an SSH tunnel like the rest of the UI, and isn't
+affected by the station's incomplete certificate chain.
+
+All listeners share one connection to the station, which the recorder keeps
+open for a minute after the last one stops. It holds the last 10 seconds of
+audio, so a listener starts 5 seconds behind live and the browser can begin
+playing straight away. When a recording is in progress, the connection starts
+with the audio just recorded, so listening starts at once. Otherwise the first
+listener waits about 5 seconds in Chrome, because the station sends only about
+1.6 seconds of audio up front. The station sends every listener the same bytes,
+so the recording's audio, and the stream after a dropped connection, are lined
+up frame for frame: nothing is repeated or skipped.
 
 **End recording** stops the recording now, after asking to confirm. Everything
 recorded so far is saved as usual (whole-show file, songs and playlist), and the

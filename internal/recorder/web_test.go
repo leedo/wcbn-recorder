@@ -35,6 +35,7 @@ func testApp(t *testing.T) (*App, *httptest.Server) {
 	}
 	srv := httptest.NewServer(app.Handler())
 	t.Cleanup(srv.Close)
+	t.Cleanup(func() { app.tap.close() }) // runs first: ends /listen streams, as Run does on shutdown
 	return app, srv
 }
 

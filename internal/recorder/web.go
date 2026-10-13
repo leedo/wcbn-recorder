@@ -109,17 +109,9 @@ func (a *App) Handler() http.Handler {
 			"recording": len(data.Recording), "recordingShows": recordingShows,
 		})
 	})
-	// Listen to the station live, relayed through the recorder.
-	mux.HandleFunc("GET /listen/live", a.serveLiveStream)
-	// Listen to a recording in progress, from just behind the live edge.
-	mux.HandleFunc("GET /listen/{id}", func(w http.ResponseWriter, r *http.Request) {
-		rec := a.activeRecording(r.PathValue("id"))
-		if rec == nil {
-			http.Error(w, "nothing is being recorded with that id", http.StatusNotFound)
-			return
-		}
-		rec.serveListen(w, r)
-	})
+	// Listen to the station, through the shared connection; the same stream
+	// whether or not anything is being recorded.
+	mux.HandleFunc("GET /listen", a.serveListen)
 	// End a recording early; what's been recorded is saved, and the show stays
 	// selected for future airings.
 	mux.HandleFunc("POST /recordings/{id}/stop", func(w http.ResponseWriter, r *http.Request) {
