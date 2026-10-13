@@ -53,7 +53,7 @@ recorder's log output: the last 1,000 lines since it started, with new lines
 added as they're logged. The log is also written to stderr as usual (with
 timestamps, except under journald, which adds its own).
 
-**Upcoming** lists the selected shows coming up in the next week. The
+**Upcoming** lists the selected shows coming up in the next two days (48 hours). The
 **Shows** page lists every show on the calendar, with its DJ and category
 (under the title) and next airing. Search it by show or DJ, or filter it by
 category. Click **+ Add** to record a show; the shows you're recording are

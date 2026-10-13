@@ -27,6 +27,7 @@ var templateFS embed.FS
 const (
 	liveInterval      = time.Second      // how often the page's event streams check for progress
 	keepAliveInterval = 30 * time.Second // the longest an event stream goes without sending anything
+	upcomingWindow    = 48 * time.Hour   // how far ahead the Upcoming page lists recordings
 )
 
 //go:embed favicon.png
@@ -523,7 +524,7 @@ func (a *App) pageData(ctx context.Context) (pageData, error) {
 		data.Recording = append(data.Recording, st)
 	}
 	for _, j := range jobs {
-		if !started[j.Event.Key()] && len(data.Upcoming) < 15 {
+		if !started[j.Event.Key()] && j.Event.Start.Before(now.Add(upcomingWindow)) {
 			data.Upcoming = append(data.Upcoming, view(j))
 		}
 	}

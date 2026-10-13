@@ -340,3 +340,30 @@ func TestWebLayout(t *testing.T) {
 		}
 	}
 }
+
+// Upcoming lists only the next two days of recordings.
+func TestWebUpcomingWindow(t *testing.T) {
+	app, srv := testApp(t)
+	ctx := t.Context()
+	soon := app.events[0] // Train To Skaville, starting within the hour
+	later := soon
+	later.Start, later.End = soon.Start.Add(3*24*time.Hour), soon.End.Add(3*24*time.Hour)
+	app.mu.Lock()
+	app.events = append(app.events, later)
+	app.mu.Unlock()
+	shows, _ := app.store.Shows(ctx)
+	for _, sh := range shows {
+		if sh.Title == soon.Title {
+			app.store.SetRecord(ctx, sh.ID, true)
+		}
+	}
+
+	page := get(t, srv.URL+"/")
+	when := func(ev spinitron.Event) string { return ev.Start.In(app.cfg.Location).Format("Mon Jan 2, 3:04 PM") }
+	if !strings.Contains(page, when(soon)) {
+		t.Errorf("the airing in the next two days is missing (%s)", when(soon))
+	}
+	if strings.Contains(page, when(later)) {
+		t.Errorf("the airing three days out is listed (%s)", when(later))
+	}
+}
