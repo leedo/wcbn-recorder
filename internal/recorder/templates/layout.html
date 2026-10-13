@@ -55,6 +55,9 @@
   .add-col { text-align: right; }
   tr.off td:not(:first-child) { opacity: .6; }
   td.title { min-width: 220px; }
+  @media (max-width: 640px) { td.title { min-width: 0; } } /* so the table fits; titles wrap instead */
+  /* The Show column takes the spare width; Next airing and Add are only as wide as their contents. */
+  #browse :is(th, td):not(:first-child) { width: 1%; }
   td.title a { font-weight: 600; text-decoration: none; }
   td.title a:hover { text-decoration: underline; }
   td.title .sub { font-size: 13px; margin-top: 2px; }

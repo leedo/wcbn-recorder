@@ -38,8 +38,8 @@
       </div>
       </div>
     </td>
-    <td class="nowrap" data-sort="{{if .OnCalendar}}{{.NextAiring.Unix}}{{end}}">
-      {{if .OnCalendar}}{{when .NextAiring}}{{else}}
+    <td data-sort="{{if .OnCalendar}}{{.NextAiring.Unix}}{{end}}">
+      {{if .OnCalendar}}<span class="nowrap">{{when .NextAiring}}</span>{{else}}
         <span class="muted">Not on this week's schedule</span>
         {{if .LastSeen.IsZero}}<br><span class="muted">(never seen)</span>{{end}}
         <form method="post" action="/shows/{{.ID}}/delete" class="delete-form"{{if .Record}} hidden{{end}}><br><button type="submit" class="link">remove</button></form>
