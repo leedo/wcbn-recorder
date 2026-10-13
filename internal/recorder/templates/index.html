@@ -14,7 +14,7 @@
   <div class="live-main">
   <div class="live-head">
     <span class="badge">ON AIR</span>
-    <h2>{{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
+    <h2>{{if .ShowID}}<a href="/shows#show-{{.ShowID}}">{{.Title}}</a>{{else if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
     {{with .DJ}}<span class="muted">with {{.}}</span>{{end}}
     {{if not .Start.IsZero}}<span class="slot muted">{{clock .Start}} – {{clock .End}}</span>{{end}}
   </div>

@@ -80,7 +80,7 @@ func TestWebOnAir(t *testing.T) {
 	app.mu.Unlock()
 
 	page := get(t, srv.URL+"/")
-	for _, want := range []string{`class="card live-card onair"`, "ON AIR", `<h2><a href="https://spinitron.com/WCBN/show/1/x" target="_blank" rel="noopener">Train To Skaville</a></h2>`, "with brian tomsic",
+	for _, want := range []string{`class="card live-card onair"`, "ON AIR", `<h2><a href="/shows#show-`, "with brian tomsic",
 		"West Coast Blues", "Blind Blake", "Not recording · 320 kbps"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("On air card missing %q", want)
@@ -123,6 +123,9 @@ func TestWebOnAir(t *testing.T) {
 		if sh.Title == "Train To Skaville" {
 			id = sh.ID
 		}
+	}
+	if want := fmt.Sprintf(`<h2><a href="/shows#show-%d">Train To Skaville</a></h2>`, id); !strings.Contains(page, want) {
+		t.Errorf("the On air card's title should link to the show on the Shows page: missing %s", want)
 	}
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err = client.PostForm(fmt.Sprintf("%s/shows/%d/record", srv.URL, id), url.Values{"record": {"1"}})
