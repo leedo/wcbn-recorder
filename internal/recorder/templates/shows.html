@@ -21,8 +21,7 @@
 <table>
   <thead><tr>
     <th aria-sort="ascending"><button type="button" class="sort" data-col="0">Show</button></th>
-    <th aria-sort="none"><button type="button" class="sort" data-col="1">Category</button></th>
-    <th aria-sort="none"><button type="button" class="sort" data-col="2" data-type="number">Next airing</button></th>
+    <th aria-sort="none"><button type="button" class="sort" data-col="1" data-type="number">Next airing</button></th>
     <th class="add-col">Add</th>
   </tr></thead>
   <tbody>
@@ -35,11 +34,10 @@
       <div>
       {{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>{{else}}<strong>{{.Title}}</strong>{{end}}
        <span class="tag rec rec-tag"{{if not .RecordingNow}} hidden{{end}}>● recording</span>
-      {{with .DJ}}<div class="sub muted">with {{.}}</div>{{end}}
+      {{if or .DJ .Category}}<div class="sub muted">{{with .DJ}}with {{.}}{{end}}{{if and .DJ .Category}} · {{end}}{{.Category}}</div>{{end}}
       </div>
       </div>
     </td>
-    <td data-sort="{{lower .Category}}">{{.Category}}</td>
     <td class="nowrap" data-sort="{{if .OnCalendar}}{{.NextAiring.Unix}}{{end}}">
       {{if .OnCalendar}}{{when .NextAiring}}{{else}}
         <span class="muted">Not on this week's schedule</span>

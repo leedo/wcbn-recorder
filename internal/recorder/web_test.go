@@ -79,12 +79,14 @@ func TestWebToggle(t *testing.T) {
 	if strings.Contains(page, "<script>alert(1)</script>") {
 		t.Error("show title was not escaped")
 	}
-	if !strings.Contains(page, `<td class="title" data-sort="train to skaville">`) || !strings.Contains(page, `class="sort" data-col="2" data-type="number">Next airing`) {
+	if !strings.Contains(page, `<td class="title" data-sort="train to skaville">`) || !strings.Contains(page, `class="sort" data-col="1" data-type="number">Next airing`) {
 		t.Error("missing sort attributes")
 	}
-	// The DJ is under the show's title, not in a column of its own, and there's no description.
-	if !strings.Contains(page, `<div class="sub muted">with brian tomsic</div>`) || strings.Contains(page, ">DJ</button>") || strings.Contains(page, "<summary>Description</summary>") {
-		t.Error("the show list should have the DJ under the title, and no DJ column or description")
+	// The DJ and category are under the show's title, not in columns of their
+	// own, and there's no description.
+	if !strings.Contains(page, `<div class="sub muted">with brian tomsic · Specialty</div>`) || strings.Contains(page, ">DJ</button>") ||
+		strings.Contains(page, ">Category</button>") || strings.Contains(page, "<summary>Description</summary>") {
+		t.Error("the show list should have the DJ and category under the title, and no DJ or Category column or description")
 	}
 
 	shows, _ := app.store.Shows(context.Background())

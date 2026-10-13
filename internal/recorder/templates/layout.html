@@ -547,7 +547,7 @@
         headers.forEach((th, i) => {
           if (th.querySelector("button.sort")) th.setAttribute("aria-sort", i === col ? (dir === "desc" ? "descending" : "ascending") : "none");
         });
-        localStorage.setItem("wcbn-sort-4", JSON.stringify({ col, dir })); // "-4": column numbers changed when DJ went
+        localStorage.setItem("wcbn-sort-5", JSON.stringify({ col, dir })); // "-5": column numbers changed when Category went
       }
       headers.forEach((th, col) => {
         const button = th.querySelector("button.sort");
@@ -561,7 +561,7 @@
       // Restore the last sort (?sort=<column>&dir=asc|desc overrides it, for links).
       const params = new URLSearchParams(location.search);
       let saved = null;
-      try { saved = JSON.parse(localStorage.getItem("wcbn-sort-4")); } catch {}
+      try { saved = JSON.parse(localStorage.getItem("wcbn-sort-5")); } catch {}
       if (params.has("sort")) saved = { col: Number(params.get("sort")), dir: params.get("dir") === "desc" ? "desc" : "asc" };
       if (saved && headers[saved.col]?.querySelector("button.sort")) sortBy(saved.col, saved.dir);
     },

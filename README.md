@@ -57,9 +57,9 @@ timestamps, except under journald, which adds its own).
 **Shows** page has **Your shows**, the list of selected shows with their next
 airing and a **Remove** button.
 
-Below it, **Add shows** lists every show on the calendar, with its DJ (under
-the title), category and next airing. Search it by show or DJ, or filter it
-by category, and click **+ Add** to add a show: it appears in Your shows,
+Below it, **Add shows** lists every show on the calendar, with its DJ and
+category (under the title) and next airing. Search it by show or DJ, or filter
+it by category, and click **+ Add** to add a show: it appears in Your shows,
 highlighted, and you stay in the list to add more. Shows already in Your shows
 are marked **✓ Added**; remove them from Your shows. `/shows#add-shows` links
 straight to the list (old `/?add=1` and `/shows?add=1` links redirect there).
