@@ -321,7 +321,8 @@ func TestReaddAfterEnd(t *testing.T) {
 		names = append(names, e.Name())
 	}
 	base := first.out.base
-	for _, want := range []string{"." + base + ".mp3", "." + base + " 2.mp3", "01 - Train To Skaville.mp3", "02 - Train To Skaville.mp3", base + ".m3u8"} {
+	for _, want := range []string{"." + base + ".mp3", "." + base + ".cue", "." + base + " 2.mp3", "." + base + " 2.cue",
+		"01 - Train To Skaville.mp3", "02 - Train To Skaville.mp3", base + ".m3u8"} {
 		if !slices.Contains(names, want) {
 			t.Errorf("missing %q in %v", want, names)
 		}

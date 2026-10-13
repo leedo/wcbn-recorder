@@ -147,8 +147,9 @@ func (r *recording) writeShowFile(meta showMeta, part, path string) error {
 		tag.Picture(meta.Art.mime, meta.Art.data)
 	}
 
+	segs := r.segments()
 	var chs []id3.Chapter
-	for _, s := range r.segments() {
+	for _, s := range segs {
 		chs = append(chs, id3.Chapter{StartMs: s.startMs, EndMs: s.endMs, Title: s.mark.title})
 	}
 	if len(chs) > id3.MaxChapters {
@@ -164,7 +165,14 @@ func (r *recording) writeShowFile(meta showMeta, part, path string) error {
 		return err
 	}
 	defer src.Close()
-	return writeTagged(uniquePath(path, ".mp3"), &tag, src) // a resumed recording adds a second one
+	path = uniquePath(path, ".mp3") // a resumed recording adds a second one
+	if err := writeTagged(path, &tag, src); err != nil {
+		return err
+	}
+	if err := r.writeCue(meta, path, segs); err != nil {
+		log.Printf("writing CUE sheet for %q: %v", meta.Title, err) // the show file itself is fine
+	}
+	return nil
 }
 
 // segment is the stretch of audio between one stream title change and the next.

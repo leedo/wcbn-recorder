@@ -125,6 +125,7 @@ Each recording produces:
     01 - <artist> - <title>.mp3
     02 - <artist> - <title>.mp3
     …
+    .<show> - YYYY-MM-DD.cue       CUE sheet for the whole show (hidden, with it)
     <show> - YYYY-MM-DD.m3u8       playlist of the songs
     cover.jpg                      the show's artwork
 ```
@@ -134,6 +135,14 @@ The whole-show file is a backup when song files are on, so it's kept hidden
 it; `ls -a` or your file manager's "show hidden files" reveals it. With
 `track_files` off, the whole show is the only output and is written visibly
 instead, as `<destination>/<program>/<show> - YYYY-MM-DD.mp3`.
+
+A CUE sheet is written next to the whole-show file, with the same name ending
+in `.cue`, listing each song as a track with its title, artist and start time.
+Players that support CUE sheets, such as foobar2000, VLC and Kodi, then show the
+one file as an album of songs, played gaplessly. (Plex doesn't read CUE sheets;
+it uses the song files.) The start times are the same split points as the song
+files and chapters. The CUE format allows at most 99 tracks, and minutes go
+past 99 on long shows, which software players accept.
 
 Set `show_file` or `track_files` to `false`
 to skip either output. While recording, audio goes to a hidden `.….mp3.part`

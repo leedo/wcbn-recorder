@@ -137,6 +137,7 @@ func TestWriteTracks(t *testing.T) {
 		names = append(names, e.Name())
 	}
 	wantNames := []string{
+		".Train To Skaville - 2026-10-13.cue", // CUE sheet for the whole show
 		".Train To Skaville - 2026-10-13.mp3", // the whole show, hidden alongside the songs
 		"01 - Toots & the Maytals - Pressure Drop.mp3",
 		"02 - The Specials - A Message to You, Rudy.mp3", // "Stand by Me" had no audio
@@ -149,7 +150,7 @@ func TestWriteTracks(t *testing.T) {
 
 	frameLen := len(mp3Frame(0))
 	wantAudio := [][]byte{f.audio[:3*frameLen], f.audio[3*frameLen : 5*frameLen], f.audio[5*frameLen:]}
-	for i, name := range wantNames[1:4] {
+	for i, name := range wantNames[2:5] {
 		tags, audio := readTag(t, filepath.Join(out.trackDir, name))
 		if !bytes.Equal(audio, wantAudio[i]) {
 			t.Errorf("%s: %d audio bytes, want %d", name, len(audio), len(wantAudio[i]))
@@ -166,7 +167,29 @@ func TestWriteTracks(t *testing.T) {
 		}
 	}
 
-	m3u, _ = os.ReadFile(filepath.Join(out.trackDir, wantNames[4]))
+	cue, _ := os.ReadFile(filepath.Join(out.trackDir, wantNames[0]))
+	wantCue := `REM GENRE "Specialty"
+REM DATE 2026-10-13
+PERFORMER "brian tomsic"
+TITLE "Train To Skaville (2026-10-13)"
+FILE ".Train To Skaville - 2026-10-13.mp3" MP3
+  TRACK 01 AUDIO
+    TITLE "Pressure Drop"
+    PERFORMER "Toots & the Maytals"
+    INDEX 01 00:00:00
+  TRACK 02 AUDIO
+    TITLE "A Message to You, Rudy"
+    PERFORMER "The Specials"
+    INDEX 01 00:00:05
+  TRACK 03 AUDIO
+    TITLE "WCBN station ID"
+    INDEX 01 00:00:09
+`
+	if string(cue) != wantCue {
+		t.Errorf("CUE sheet:\n%s\nwant:\n%s", cue, wantCue)
+	}
+
+	m3u, _ = os.ReadFile(filepath.Join(out.trackDir, wantNames[5]))
 	wantM3U := "#EXTM3U\n#PLAYLIST:Train To Skaville (2026-10-13)\n" +
 		"#EXTINF:0,Toots & the Maytals - Pressure Drop\n01 - Toots & the Maytals - Pressure Drop.mp3\n" +
 		"#EXTINF:0,The Specials - A Message to You, Rudy\n02 - The Specials - A Message to You, Rudy.mp3\n" +
@@ -320,5 +343,35 @@ func TestOutputPaths(t *testing.T) {
 	if out := outputPaths(cfg, "/r/Club H", "Club H - 2026-10-13"); out.showFile != "/r/Club H/Club H - 2026-10-13.mp3" ||
 		out.part != "/r/Club H/.Club H - 2026-10-13.mp3.part" {
 		t.Errorf("without song files: %+v", out)
+	}
+}
+
+func TestCueFormatting(t *testing.T) {
+	for ms, want := range map[int64]string{0: "00:00:00", 1000: "00:01:00", 61_500: "01:01:37", 3*3600_000 + 5*60_000: "185:00:00"} {
+		if got := cueTime(ms); got != want {
+			t.Errorf("cueTime(%d) = %s, want %s", ms, got, want)
+		}
+	}
+	if got := cueText("Say \"Hello\"\n  Again"); got != `"Say 'Hello' Again"` {
+		t.Errorf("cueText = %s", got)
+	}
+	if got := cuePath("/r/Show/.Show - 2026-10-13 2.mp3"); got != "/r/Show/.Show - 2026-10-13 2.cue" {
+		t.Errorf("cuePath = %s", got)
+	}
+}
+
+// With song files off, the whole show is the visible main file, and so is its CUE sheet.
+func TestCueWithoutSongFiles(t *testing.T) {
+	cfg := testConfig()
+	cfg.TrackFiles = false
+	f := newFakeRecording(t, cfg)
+	f.title("Pressure Drop by Toots & the Maytals")
+	f.frames(1, 3)
+	if err := f.finalize(t.Context(), f.part, f.out); err != nil {
+		t.Fatal(err)
+	}
+	cue, err := os.ReadFile(filepath.Join(f.cfg.Destination, "Train To Skaville - 2026-10-13.cue"))
+	if err != nil || !strings.Contains(string(cue), `FILE "Train To Skaville - 2026-10-13.mp3" MP3`) {
+		t.Errorf("CUE sheet: %v\n%s", err, cue)
 	}
 }
