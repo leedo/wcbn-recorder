@@ -50,21 +50,22 @@ func fakeIcecast(t *testing.T, status string) *httptest.Server {
 }
 
 const icecastStatus = `{"icestats":{"source":[
- {"listenurl":"http://floyd.wcbn.org:8000/wcbn-hd.mp3","title":"West Coast Blues by Blind Blake on Yazoo City Calling with Zekkie"},
+ {"listenurl":"http://floyd.wcbn.org:8000/wcbn-hd.mp3","bitrate":320,"title":"West Coast Blues by Blind Blake on Yazoo City Calling with Zekkie"},
  {"listenurl":"http://floyd.wcbn.org:8000/wcbn3.mp3","title":"Arwulf - Something else"}]}}`
 
-func TestFetchStationTitle(t *testing.T) {
+func TestFetchStationStatus(t *testing.T) {
 	srv := fakeIcecast(t, icecastStatus)
-	if got, err := fetchStationTitle(t.Context(), srv.URL+"/wcbn-hd.mp3"); err != nil || got != "West Coast Blues by Blind Blake on Yazoo City Calling with Zekkie" {
-		t.Errorf("list: %q, %v", got, err)
+	if got, err := fetchStationStatus(t.Context(), srv.URL+"/wcbn-hd.mp3"); err != nil ||
+		got.Title != "West Coast Blues by Blind Blake on Yazoo City Calling with Zekkie" || got.Bitrate != 320 {
+		t.Errorf("list: %+v, %v", got, err)
 	}
 	// Icecast sends a single object, not a list, when there's one source.
 	one := fakeIcecast(t, `{"icestats":{"source":{"listenurl":"http://x:8000/wcbn-hd.mp3","title":"Solo"}}}`)
-	if got, err := fetchStationTitle(t.Context(), one.URL+"/wcbn-hd.mp3"); err != nil || got != "Solo" {
-		t.Errorf("single: %q, %v", got, err)
+	if got, err := fetchStationStatus(t.Context(), one.URL+"/wcbn-hd.mp3"); err != nil || got.Title != "Solo" || got.Bitrate != 0 {
+		t.Errorf("single: %+v, %v", got, err)
 	}
-	if got, _ := fetchStationTitle(t.Context(), srv.URL+"/other.mp3"); got != "" {
-		t.Errorf("unknown mount: %q", got)
+	if got, _ := fetchStationStatus(t.Context(), srv.URL+"/other.mp3"); got != (stationStatus{}) {
+		t.Errorf("unknown mount: %+v", got)
 	}
 }
 
@@ -80,7 +81,7 @@ func TestWebOnAir(t *testing.T) {
 
 	page := get(t, srv.URL+"/")
 	for _, want := range []string{`class="card live-card onair"`, "ON AIR", `<h2><a href="https://spinitron.com/WCBN/show/1/x" target="_blank" rel="noopener">Train To Skaville</a></h2>`, "with brian tomsic",
-		"West Coast Blues", "Blind Blake", `data-src="/listen"`, "+ Record this show", `name="from" value="onair"`} {
+		"West Coast Blues", "Blind Blake", `data-src="/listen"`, "+ Record this show", `name="from" value="onair"`, "Not recording · 320 kbps"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("On air card missing %q", want)
 		}

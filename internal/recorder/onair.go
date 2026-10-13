@@ -29,11 +29,18 @@ type onAirView struct {
 	Selected   bool // already selected for recording
 	Song       string
 	Artist     string
+	Bitrate    int // kbps, from the station's status page
 }
 
-// stationTitleMaxAge is how long a fetched stream title is reused, so open
-// pages polling every 5 seconds don't each hit the station.
-const stationTitleMaxAge = 10 * time.Second
+// stationStatusMaxAge is how long a fetched station status is reused, so
+// open pages polling every 5 seconds don't each hit the station.
+const stationStatusMaxAge = 10 * time.Second
+
+// stationStatus is what the Icecast status page says about our stream.
+type stationStatus struct {
+	Title   string // "<song> by <artist> on <show> with <dj>"
+	Bitrate int    // kbps
+}
 
 // currentEvent returns the program on the air at now, if any.
 func currentEvent(events []spinitron.Event, now time.Time) (spinitron.Event, bool) {
@@ -45,29 +52,29 @@ func currentEvent(events []spinitron.Event, now time.Time) (spinitron.Event, boo
 	return spinitron.Event{}, false
 }
 
-// stationTitle returns the stream's current title, fetched from the Icecast
-// status page next to the stream (or cached).
-func (a *App) stationTitle(ctx context.Context) string {
-	a.titleMu.Lock()
-	defer a.titleMu.Unlock()
-	if time.Since(a.titleAt) < stationTitleMaxAge {
-		return a.title
+// stationStatus returns the stream's status from the Icecast status page
+// next to the stream (or cached).
+func (a *App) stationStatus(ctx context.Context) stationStatus {
+	a.statusMu.Lock()
+	defer a.statusMu.Unlock()
+	if time.Since(a.statusAt) < stationStatusMaxAge {
+		return a.status
 	}
-	a.titleAt = time.Now()
-	title, err := fetchStationTitle(ctx, a.cfg.StreamURL)
+	a.statusAt = time.Now()
+	st, err := fetchStationStatus(ctx, a.cfg.StreamURL)
 	if err != nil {
 		log.Printf("station status: %v", err)
 	}
-	a.title = title
-	return title
+	a.status = st
+	return st
 }
 
-// fetchStationTitle reads Icecast's status-json.xsl on the stream's server
-// and returns the title of the source serving the stream's mount point.
-func fetchStationTitle(ctx context.Context, streamURL string) (string, error) {
+// fetchStationStatus reads Icecast's status-json.xsl on the stream's server
+// and returns the status of the source serving the stream's mount point.
+func fetchStationStatus(ctx context.Context, streamURL string) (stationStatus, error) {
 	stream, err := url.Parse(streamURL)
 	if err != nil {
-		return "", err
+		return stationStatus{}, err
 	}
 	status := *stream
 	status.Path, status.RawQuery = "/status-json.xsl", ""
@@ -75,7 +82,7 @@ func fetchStationTitle(ctx context.Context, streamURL string) (string, error) {
 	defer cancel()
 	data, err := httpx.Get(ctx, status.String())
 	if err != nil {
-		return "", err
+		return stationStatus{}, err
 	}
 	var st struct {
 		Icestats struct {
@@ -83,25 +90,26 @@ func fetchStationTitle(ctx context.Context, streamURL string) (string, error) {
 		} `json:"icestats"`
 	}
 	if err := json.Unmarshal(data, &st); err != nil {
-		return "", err
+		return stationStatus{}, err
 	}
 	type source struct {
 		ListenURL string `json:"listenurl"`
 		Title     string `json:"title"`
+		Bitrate   int    `json:"bitrate"`
 	}
 	var sources []source
 	if err := json.Unmarshal(st.Icestats.Source, &sources); err != nil {
 		var one source
 		if err := json.Unmarshal(st.Icestats.Source, &one); err != nil {
-			return "", err
+			return stationStatus{}, err
 		}
 		sources = []source{one}
 	}
 	// The listen URL can differ in host and port from ours; match the mount.
 	for _, s := range sources {
 		if u, err := url.Parse(s.ListenURL); err == nil && u.Path == stream.Path {
-			return strings.TrimSpace(s.Title), nil
+			return stationStatus{Title: strings.TrimSpace(s.Title), Bitrate: s.Bitrate}, nil
 		}
 	}
-	return "", nil
+	return stationStatus{}, nil
 }

@@ -16,6 +16,7 @@ type liveStatus struct {
 	Progress   int       // percent of the scheduled slot elapsed
 	RecordedMs int64
 	Bytes      int64
+	Bitrate    int // kbps, from the stream's frames
 	Connected  bool
 	Finishing  bool // writing output files
 	Stopped    bool // ended early from the UI
@@ -44,7 +45,7 @@ func (r *recording) status(now time.Time) liveStatus {
 	st := liveStatus{
 		ID: r.id, Key: ev.Key(), Title: ev.Title, DJ: ev.DJ,
 		Start: ev.Start, End: ev.End, Until: r.job.Until, Started: r.started,
-		RecordedMs: r.audio.DurationMs(), Bytes: r.audio.Written(),
+		RecordedMs: r.audio.DurationMs(), Bytes: r.audio.Written(), Bitrate: r.audio.Bitrate(),
 		Connected: r.connected, Finishing: r.finishing, Stopped: r.stopped, LastErr: r.lastErr, Reconnects: r.reconnects,
 		SongFiles: r.cfg.TrackFiles, Saved: len(r.songsSaved),
 	}

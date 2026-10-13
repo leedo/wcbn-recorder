@@ -35,10 +35,10 @@ type App struct {
 	runCtx      context.Context // the scheduler's context, once run has started
 	tap         *stationTap     // the shared station connection for listeners
 
-	// The station's current stream title, for the "On air" panel; cached.
-	titleMu sync.Mutex
-	title   string
-	titleAt time.Time
+	// The station's status (current song, bitrate), for the "On air" panel; cached.
+	statusMu sync.Mutex
+	status   stationStatus
+	statusAt time.Time
 
 	wake           chan struct{} // re-evaluate selections now
 	refreshNow     chan struct{} // re-fetch the schedule now

@@ -542,7 +542,7 @@
     {{end}}
   </div>
   {{if not .Start.IsZero}}<div class="progress" role="progressbar" aria-label="Show progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Progress}}"><div style="width: {{.Progress}}%"></div></div>{{end}}
-  <div class="stats muted">Not recording{{if .Selected}} · this show is in Your shows{{end}}</div>
+  <div class="stats muted">Not recording{{with .Bitrate}} · {{.}} kbps{{end}}{{if .Selected}} · this show is in Your shows{{end}}</div>
   {{if .Song}}
   <div class="now-playing">
     <span class="label">Now playing</span>
@@ -577,7 +577,7 @@
   </div>
   <div class="progress" role="progressbar" aria-label="Show progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Progress}}"><div style="width: {{.Progress}}%"></div></div>
   <div class="stats muted">
-    Recorded {{dur .RecordedMs}} · {{mb .Bytes}} · stops at {{clock .Until}}
+    Recorded {{dur .RecordedMs}} · {{mb .Bytes}}{{with .Bitrate}} · {{.}} kbps{{end}} · stops at {{clock .Until}}
     {{if .SongFiles}} · {{.Saved}} song{{if ne .Saved 1}}s{{end}} saved{{end}}
     {{with .Reconnects}} · {{.}} reconnect{{if gt . 1}}s{{end}}{{end}}
     {{if and (not .Connected) (not .Finishing) .LastErr}}<br>Last error: {{.LastErr}}{{end}}

@@ -15,7 +15,7 @@ func mp3Frame(fill byte) []byte {
 
 func TestParseFrameHeader(t *testing.T) {
 	h, ok := ParseFrameHeader(mp3Frame(0))
-	if !ok || h.Length != 1044 || h.Samples != 1152 || h.SampleRate != 44100 || h.Layer != 3 {
+	if !ok || h.Length != 1044 || h.Samples != 1152 || h.SampleRate != 44100 || h.Layer != 3 || h.Bitrate != 320 {
 		t.Fatalf("got %+v, %v", h, ok)
 	}
 	// Padding bit adds a byte.
@@ -67,6 +67,9 @@ func TestFrameWriter(t *testing.T) {
 	want := append(append(append(mp3Frame(1), mp3Frame(2)...), mp3Frame(4)...), mp3Frame(5)...)
 	if !bytes.Equal(out.Bytes(), want) {
 		t.Fatalf("wrote %d bytes, want %d (frames 1,2,4,5)", out.Len(), len(want))
+	}
+	if fw.Bitrate() != 320 {
+		t.Errorf("bitrate = %d", fw.Bitrate())
 	}
 	if fw.written != int64(len(want)) {
 		t.Errorf("written = %d", fw.written)

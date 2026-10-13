@@ -53,8 +53,8 @@ that is being recorded lets that recording finish.
 
 When nothing is recording, the top of the page shows what's **on air**: the
 current program from the schedule, with its artwork, DJ, time slot and progress,
-and the song playing now (read from the station's Icecast status page, at most
-every 10 seconds). **+ Record this show** selects the program and starts
+and the song playing now and the stream's bitrate (read from the station's
+Icecast status page, at most every 10 seconds). **+ Record this show** selects the program and starts
 recording it immediately (it reads **● Record now** if the show is already
 selected, for example after ending a recording). **▶ Listen** plays the station
 (see Listening below).
@@ -64,7 +64,8 @@ While a show is recording, a live panel sits at the top of the page. It shows:
 - **status:** REC, RECONNECTING (with the last error), or SAVING while the files
   are written
 - **progress:** how far through the time slot the show is, how much has been
-  recorded, and when recording stops
+  recorded, the stream's bitrate (read from the MP3 frames being saved), and
+  when recording stops
 - **now playing:** the current song's title and artist, when it started, and how
   long it has played
 - **songs recorded so far:** an expandable list in air order, numbered the same

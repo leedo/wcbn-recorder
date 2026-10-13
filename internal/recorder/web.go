@@ -359,7 +359,9 @@ func (a *App) onAir(ctx context.Context, events []spinitron.Event, shows map[str
 			v.Progress = int(min(max(now.Sub(ev.Start)*100/slot, 0), 100))
 		}
 	}
-	if title := a.stationTitle(ctx); title != "" {
+	st := a.stationStatus(ctx)
+	v.Bitrate = st.Bitrate
+	if title := st.Title; title != "" {
 		track, dj, _ := splitStreamTitle(title, ev.Title)
 		v.Song, v.Artist = splitSong(track)
 		if v.DJ == "" {

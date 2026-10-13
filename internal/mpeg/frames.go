@@ -18,6 +18,7 @@ type FrameWriter struct {
 	sampleRate int
 	written    int64   // bytes passed through
 	recent     []int64 // start offsets of the last few frames on this connection
+	bitrate    int     // kbps, of the latest frame
 }
 
 // overlapFrames is how many frames before a song's cut point are repeated at
@@ -66,6 +67,7 @@ func (f *FrameWriter) Write(p []byte) (int, error) {
 		f.written += int64(h.Length)
 		f.samples += int64(h.Samples)
 		f.sampleRate = h.SampleRate
+		f.bitrate = h.Bitrate
 		f.buf = f.buf[h.Length:]
 	}
 	// Compact so the buffer doesn't grow without bound.
@@ -82,6 +84,9 @@ func (f *FrameWriter) Reset() {
 
 // NewFrameWriter returns a FrameWriter that writes whole frames to w.
 func NewFrameWriter(w io.Writer) *FrameWriter { return &FrameWriter{w: w} }
+
+// Bitrate is the latest frame's bitrate in kbps, or 0 before any audio.
+func (f *FrameWriter) Bitrate() int { return f.bitrate }
 
 // Written is the number of bytes passed through so far.
 func (f *FrameWriter) Written() int64 { return f.written }
@@ -125,6 +130,7 @@ func FindSync(b []byte) (int, bool) {
 type FrameHeader struct {
 	Layer      int
 	SampleRate int
+	Bitrate    int // kbps
 	Samples    int // per frame
 	Length     int // bytes, including header
 }
@@ -166,7 +172,7 @@ func ParseFrameHeader(b []byte) (FrameHeader, bool) {
 	bitrate := bitrates[mpeg1][layer-1][brIndex] * 1000
 	sr := sampleRates[version][srIndex]
 
-	h := FrameHeader{Layer: layer, SampleRate: sr}
+	h := FrameHeader{Layer: layer, SampleRate: sr, Bitrate: bitrate / 1000}
 	switch {
 	case layer == 1:
 		h.Samples = 384
