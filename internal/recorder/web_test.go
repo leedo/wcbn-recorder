@@ -25,14 +25,13 @@ func testApp(t *testing.T) (*App, *httptest.Server) {
 	store := testStore(t)
 	loc, _ := time.LoadLocation("America/Detroit")
 	cfg := &config.Config{Location: loc, PostRoll: config.Duration{Duration: 2 * time.Minute}}
-	app := NewApp(cfg, store)
+	app := NewApp(cfg, store, NewLogs(100, nil, false))
 
 	start := time.Now().Add(time.Hour).Truncate(time.Hour)
 	app.events = []spinitron.Event{
 		{Title: "Train To Skaville", DJ: "brian tomsic", Category: "Specialty", URL: "https://spinitron.com/WCBN/show/1/x", Start: start, End: start.Add(time.Hour)},
 		{Title: "<script>alert(1)</script>", Category: "Freeform", URL: "https://spinitron.com/WCBN/show/2/y", Start: start.Add(time.Hour), End: start.Add(2 * time.Hour)},
 	}
-	app.lastRefresh = time.Now()
 	if err := store.UpsertEvents(ctx, app.events, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -67,6 +66,9 @@ func TestWebToggle(t *testing.T) {
 	if !strings.Contains(page, `<section id="browse" >`) || !strings.Contains(page, `aria-expanded="true"`) ||
 		!strings.Contains(page, `<div class="card" id="mine" hidden>`) || !strings.Contains(page, `<span id="shows-title">Add shows</span>`) {
 		t.Error("the show list should replace Your shows when nothing is selected")
+	}
+	if strings.Contains(page, "Refresh now") || strings.Contains(page, "Schedule updated") {
+		t.Error("the page shouldn't show when the schedule was updated, or a Refresh button")
 	}
 	if strings.Contains(page, "<script>alert(1)</script>") {
 		t.Error("show title was not escaped")
@@ -222,8 +224,8 @@ func TestWebArtwork(t *testing.T) {
 	}
 }
 
-// Refresh now and remove answer the page's script without a redirect, so the
-// page doesn't reload (which would stop any audio).
+// Remove answers the page's script without a redirect, so the page doesn't
+// reload (which would stop any audio).
 func TestWebInPlaceActions(t *testing.T) {
 	app, srv := testApp(t)
 	post := func(path string) *http.Response {
@@ -238,20 +240,12 @@ func TestWebInPlaceActions(t *testing.T) {
 		resp.Body.Close()
 		return resp
 	}
-	if resp := post("/refresh"); resp.StatusCode != http.StatusAccepted {
-		t.Errorf("refresh: %s", resp.Status)
-	}
 	shows, _ := app.store.Shows(context.Background())
 	if resp := post(fmt.Sprintf("/shows/%d/delete", shows[0].ID)); resp.StatusCode != http.StatusOK {
 		t.Errorf("delete: %s", resp.Status)
 	}
 	if after, _ := app.store.Shows(context.Background()); len(after) != len(shows)-1 {
 		t.Errorf("delete didn't remove the show: %d -> %d", len(shows), len(after))
-	}
-	var out struct{ Updated string }
-	firstEvent(t, srv.URL, &out)
-	if out.Updated != "just now" {
-		t.Errorf("updated = %q", out.Updated)
 	}
 }
 

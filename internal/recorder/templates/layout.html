@@ -131,7 +131,6 @@
   .site-nav a[aria-current=page] { color: var(--fg); border-bottom-color: var(--accent); }
   main { padding-top: 16px; }
   main:focus { outline: none; }
-  .home-head { justify-content: flex-end; }
 
   /* The live card, on every page, and the player bar it becomes once it's
      scrolled out of view: pinned to the top of the window. The bar is fixed,
@@ -146,7 +145,7 @@
   .player-bar { max-width: 1100px; margin: 0 auto; padding: 8px 20px; display: flex; gap: 12px; align-items: center; }
   .player-text { flex: 1; min-width: 0; line-height: 1.3; }
   .player-show, .player-song { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .player-show { font-size: 14px; }
+  .player-show { font-size: 14px; padding-block: 2px; } /* room for the REC badge, which is taller than the line; the overflow clipping for … would cut it off */
   .player-show .badge { margin-right: 4px; }
   .player-song { font-size: 13px; }
 
@@ -154,6 +153,12 @@
   .page-head h1 { font-size: 19px; margin: 8px 0 16px; }
   .rec-list .show { flex: 1; min-width: 0; }
   .rec-list .sub { font-size: 13px; overflow-wrap: anywhere; }
+  /* Logs page */
+  .log-note { font-size: 13px; margin: -8px 0 12px; }
+  ol.log { list-style: none; margin: 0; padding: 10px 0; max-height: 70vh; overflow: auto; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  ol.log li { display: grid; grid-template-columns: 11em 1fr; gap: 12px; padding: 1px 14px; }
+  ol.log time { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  ol.log span { white-space: pre-wrap; overflow-wrap: anywhere; }
   .rec-list .info { text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
 </style>
 <script>
@@ -188,11 +193,12 @@
   <a class="brand" href="/">WCBN Recorder</a>
   <a href="/"{{if eq .Page "home"}} aria-current="page"{{end}}>Home</a>
   <a href="/recordings"{{if eq .Page "recordings"}} aria-current="page"{{end}}>Recordings</a>
+  <a href="/logs"{{if eq .Page "logs"}} aria-current="page"{{end}}>Logs</a>
 </nav>
 <div class="live-wrap"><div id="live" aria-live="polite">{{template "live" .Live}}</div></div>
 <div id="player">{{template "player" .Live.Player}}</div>
 <main id="page" data-page="{{.Page}}" tabindex="-1">
-{{if eq .Page "home"}}{{template "home" .Data}}{{else if eq .Page "recordings"}}{{template "recordings" .Data}}{{end}}
+{{if eq .Page "home"}}{{template "home" .Data}}{{else if eq .Page "recordings"}}{{template "recordings" .Data}}{{else if eq .Page "logs"}}{{template "logs" .Data}}{{end}}
 </main>
 <footer class="site-footer">Schedule and audio come from <a href="https://wcbn.org">wcbn.org</a>.</footer>
 <script>
@@ -309,7 +315,7 @@
   // its <main>. Anything else (other sites, new tabs, downloads, links to a
   // spot on the same page) is left to the browser, as is any page that can't
   // be fetched, so every URL still works as a normal page load.
-  const pages = {}; // page name (main's data-page) → { init(main), update(data) }
+  const pages = {}; // page name (main's data-page) → { init(main), update(data), leave() }
   let page = {};    // the page showing now
   let navigation = 0;
   history.scrollRestoration = "manual"; // restored by hand, once a page is swapped in
@@ -343,6 +349,7 @@
       history.pushState({ scroll: 0 }, "", url);
     }
     document.title = doc.title;
+    page.leave?.();
     document.getElementById("page").replaceWith(document.adoptNode(main));
     showPage();
     const target = url.hash && document.getElementById(decodeURIComponent(url.hash.slice(1)));
@@ -407,9 +414,9 @@
       button.disabled = false;
     }
   });
-  // Refresh now, and remove.
+  // Remove a show that's no longer on the calendar.
   document.addEventListener("submit", async e => {
-    const form = e.target.closest(".refresh-form, .delete-form");
+    const form = e.target.closest(".delete-form");
     if (!form) return;
     e.preventDefault();
     const button = form.querySelector("button");
@@ -417,7 +424,7 @@
     try {
       const res = await fetch(form.action, { method: "POST", headers: { Accept: "application/json" } });
       if (!res.ok) throw new Error(res.statusText);
-      if (form.matches(".delete-form")) form.closest("tr")?.remove();
+      form.closest("tr")?.remove();
     } catch (err) {
       alert("Couldn't do that: " + err.message);
     } finally {
@@ -569,12 +576,31 @@
     update(data) {
       morph(document.getElementById("upcoming"), data.upcoming);
       morph(document.getElementById("mine"), data.mine);
-      document.getElementById("updated").textContent = data.updated;
       const recordingShows = new Set(data.recordingShows.map(String));
       document.querySelectorAll("#browse tbody tr").forEach(row => {
         const tag = row.querySelector(".rec-tag");
         if (tag) tag.hidden = !recordingShows.has(row.id.replace("show-", ""));
       });
+    },
+  };
+
+  // The logs page: new lines are added at the bottom as they're logged, from
+  // its own event stream, open while the page is. The list follows new lines
+  // unless it's been scrolled up.
+  pages.logs = {
+    init(main) {
+      const log = main.querySelector("#log"), cap = Number(log.dataset.cap);
+      log.scrollTop = log.scrollHeight;
+      this.events = new EventSource("/logs/events?after=" + log.dataset.after);
+      this.events.onmessage = e => {
+        const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 8;
+        log.insertAdjacentHTML("beforeend", JSON.parse(e.data).html); // escaped by the server's template
+        while (log.children.length > cap) log.firstElementChild.remove();
+        if (atEnd) log.scrollTop = log.scrollHeight;
+      };
+    },
+    leave() {
+      this.events?.close();
     },
   };
 

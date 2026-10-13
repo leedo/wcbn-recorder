@@ -25,10 +25,10 @@ const (
 type App struct {
 	cfg   *config.Config
 	store *store.Store
+	logs  *Logs // recent log output, for the Logs page
 
 	mu          sync.Mutex
 	events      []spinitron.Event
-	lastRefresh time.Time
 	refreshErr  error
 	started     map[string]bool
 	active      map[string]*recording
@@ -47,19 +47,23 @@ type App struct {
 	done      chan struct{}
 
 	wake           chan struct{} // re-evaluate selections now
-	refreshNow     chan struct{} // re-fetch the schedule now
 	detailsRunning atomic.Bool
 	wg             sync.WaitGroup
 }
 
-func NewApp(cfg *config.Config, store *store.Store) *App {
+// NewApp returns the app. logs is the log output the Logs page shows; nil
+// shows none.
+func NewApp(cfg *config.Config, store *store.Store, logs *Logs) *App {
+	if logs == nil {
+		logs = NewLogs(1, nil, false)
+	}
 	a := &App{
 		cfg:        cfg,
 		store:      store,
+		logs:       logs,
 		started:    map[string]bool{},
 		active:     map[string]*recording{},
 		wake:       make(chan struct{}, 1),
-		refreshNow: make(chan struct{}, 1),
 		changed:    make(chan struct{}),
 		done:       make(chan struct{}),
 	}
@@ -117,8 +121,6 @@ func (a *App) Run(ctx context.Context) {
 			close(a.done) // and the page's event streams
 			a.wg.Wait()
 			return
-		case <-a.refreshNow:
-			nextRefresh = time.Now()
 		case <-a.wake:
 		case <-time.After(wake):
 		}
@@ -211,7 +213,6 @@ func (a *App) Refresh(ctx context.Context) bool {
 	a.refreshErr = err
 	if err == nil {
 		a.events = evs
-		a.lastRefresh = time.Now()
 	}
 	a.mu.Unlock()
 	a.notify()

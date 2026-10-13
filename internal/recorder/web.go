@@ -49,7 +49,6 @@ type showView struct {
 }
 
 type pageData struct {
-	LastRefresh time.Time
 	RefreshErr  string
 	Recording   []liveStatus
 	Upcoming    []jobView
@@ -94,15 +93,22 @@ type recordingsData struct {
 	Recordings []recordingView
 }
 
+type logsData struct {
+	Lines []LogLine
+	Last  int64 // the last line's Seq, for the page's event stream
+	Cap   int
+}
+
 func (a *App) Handler() http.Handler {
 	tmpl := template.Must(template.New("").Funcs(template.FuncMap{
-		"when":  func(t time.Time) string { return t.In(a.cfg.Location).Format("Mon Jan 2, 3:04 PM") },
-		"clock": func(t time.Time) string { return t.In(a.cfg.Location).Format("3:04 PM") },
-		"ago":   ago,
-		"lower": strings.ToLower,
-		"art":   artImage,
-		"dur":   formatDuration,
-		"mb":    func(n int64) string { return fmt.Sprintf("%.1f MB", float64(n)/1e6) },
+		"when":    func(t time.Time) string { return t.In(a.cfg.Location).Format("Mon Jan 2, 3:04 PM") },
+		"clock":   func(t time.Time) string { return t.In(a.cfg.Location).Format("3:04 PM") },
+		"lower":   strings.ToLower,
+		"art":     artImage,
+		"dur":     formatDuration,
+		"mb":      func(n int64) string { return fmt.Sprintf("%.1f MB", float64(n)/1e6) },
+		"logtime": func(t time.Time) string { return t.In(a.cfg.Location).Format("Jan 2 3:04:05 PM") },
+		"iso":     func(t time.Time) string { return t.Format(time.RFC3339) },
 	}).ParseFS(templateFS, "templates/*.html"))
 
 	mux := http.NewServeMux()
@@ -176,7 +182,7 @@ func (a *App) Handler() http.Handler {
 		return json.Marshal(map[string]any{
 			"player": player.String(), "live": live.String(), "upcoming": upcoming.String(), "mine": mine.String(),
 			"recording": len(data.Recording), "recordingShows": recordingShows,
-			"updated": ago(data.LastRefresh), "refreshErr": data.RefreshErr,
+			"refreshErr": data.RefreshErr,
 		})
 	}
 	// Server-sent events keep the page current: the state is sent on connect,
@@ -217,6 +223,64 @@ func (a *App) Handler() http.Handler {
 				return
 			case <-changed:
 			case <-tick.C:
+			}
+		}
+	})
+	mux.HandleFunc("GET /logs", func(w http.ResponseWriter, r *http.Request) {
+		data, err := a.pageData(r.Context()) // for the live card
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		lines, _ := a.logs.After(0)
+		page := logsData{Lines: lines, Cap: a.logs.Cap()}
+		if len(lines) > 0 {
+			page.Last = lines[len(lines)-1].Seq
+		}
+		render(w, tmpl, "layout", layoutData{Page: "logs", Title: "Logs", Live: data, Data: page})
+	})
+	// The Logs page's event stream sends lines as they're written, after the
+	// ones the page was drawn with (?after=), or after the last one received
+	// when the browser reconnects (Last-Event-ID).
+	mux.HandleFunc("GET /logs/events", func(w http.ResponseWriter, r *http.Request) {
+		after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
+		if id, err := strconv.ParseInt(r.Header.Get("Last-Event-ID"), 10, 64); err == nil {
+			after = id
+		}
+		rc := http.NewResponseController(w)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-store")
+		io.WriteString(w, ": connected\n\n") // so the browser knows straight away
+		if rc.Flush() != nil {
+			return
+		}
+		for {
+			lines, changed := a.logs.After(after)
+			if len(lines) > 0 {
+				var html bytes.Buffer
+				for _, line := range lines {
+					if err := tmpl.ExecuteTemplate(&html, "logline", line); err != nil {
+						return
+					}
+				}
+				after = lines[len(lines)-1].Seq
+				msg, _ := json.Marshal(map[string]any{"html": html.String()})
+				fmt.Fprintf(w, "id: %d\ndata: %s\n\n", after, msg)
+				if rc.Flush() != nil {
+					return
+				}
+			}
+			select {
+			case <-r.Context().Done():
+				return
+			case <-a.done:
+				return
+			case <-changed:
+			case <-time.After(keepAliveInterval):
+				io.WriteString(w, ": ping\n\n")
+				if rc.Flush() != nil {
+					return
+				}
 			}
 		}
 	})
@@ -310,16 +374,6 @@ func (a *App) Handler() http.Handler {
 		}
 		http.Redirect(w, r, "/?add=1", http.StatusSeeOther)
 	})
-	mux.HandleFunc("POST /refresh", func(w http.ResponseWriter, r *http.Request) {
-		poke(a.refreshNow)
-		// Also refetch every show page, not just stale ones.
-		go a.refreshDetails(context.WithoutCancel(r.Context()), time.Now())
-		if wantsJSON(r) {
-			w.WriteHeader(http.StatusAccepted) // the page picks up the result on its next refresh
-			return
-		}
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-	})
 
 	// Reject cross-site form posts, so other web pages can't change selections.
 	return http.NewCrossOriginProtection().Handler(mux)
@@ -362,7 +416,7 @@ func (a *App) pageData(ctx context.Context) (pageData, error) {
 	for _, rec := range a.active {
 		active = append(active, rec.status(now))
 	}
-	data := pageData{LastRefresh: a.lastRefresh, StationLogo: stationLogo}
+	data := pageData{StationLogo: stationLogo}
 	if a.refreshErr != nil {
 		data.RefreshErr = a.refreshErr.Error()
 	}
@@ -558,23 +612,6 @@ func formatDuration(ms int64) string {
 		return fmt.Sprintf("%d:%02d:%02d", sec/3600, sec/60%60, sec%60)
 	}
 	return fmt.Sprintf("%d:%02d", sec/60, sec%60)
-}
-
-func ago(t time.Time) string {
-	if t.IsZero() {
-		return "never"
-	}
-	d := time.Since(t).Round(time.Minute)
-	switch {
-	case d < time.Minute:
-		return "just now"
-	case d < time.Hour:
-		return fmt.Sprintf("%d min ago", int(d.Minutes()))
-	case d < 48*time.Hour:
-		return fmt.Sprintf("%d h ago", int(d.Hours()))
-	default:
-		return fmt.Sprintf("%d days ago", int(d.Hours()/24))
-	}
 }
 
 func wantsJSON(r *http.Request) bool {

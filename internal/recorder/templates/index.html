@@ -2,12 +2,6 @@
    The layout is in layout.html, including the live card ("live", below),
    which is on every page. */}}
 {{define "home"}}
-<header class="home-head">
-  <div class="status muted">
-    <span>Schedule updated <span id="updated">{{ago .LastRefresh}}</span></span>
-    <form method="post" action="/refresh" class="refresh-form"><button type="submit">Refresh now</button></form>
-  </div>
-</header>
 {{with .RefreshErr}}<div class="error"><strong>Couldn't load the schedule:</strong> {{.}}</div>{{end}}
 
 <h2>Upcoming recordings</h2>

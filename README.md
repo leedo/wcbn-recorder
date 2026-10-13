@@ -33,7 +33,7 @@ internal/recorder/    scheduler, recording, song files, web UI (templates/)
 
 ## Web UI
 
-The UI has two pages, **Home** and **Recordings**, with the live panel (what's
+The UI has three pages, **Home**, **Recordings** and **Logs**, with the live panel (what's
 on air or recording, described below) at the top of both. Scroll it out of view
 and it shrinks into a bar pinned to the top of the window, with the show's
 artwork, title and DJ, the current song, a REC badge while recording, and the
@@ -41,7 +41,10 @@ Listen button; click the show in the bar to scroll back up to the panel.
 Moving between pages doesn't reload the page: the page's script fetches the
 next page and swaps it in, so listening carries on. Every page is still an ordinary URL that works on its own.
 **Recordings** lists everything recorded, newest first, with its length, size,
-song count and folder (see Recordings database below).
+song count and folder (see Recordings database below). **Logs** shows the
+recorder's log output: the last 1,000 lines since it started, with new lines
+added as they're logged. The log is also written to stderr as usual (with
+timestamps, except under journald, which adds its own).
 
 The home page shows the selected shows coming up in the next week, and **Your shows**, the
 list of selected shows with their next airing and a **Remove** button.
@@ -109,8 +112,7 @@ it's visible: right away when a recording starts or ends, a show is selected,
 or the schedule is refreshed, and every second while recording.
 
 Show details come from Spinitron. The calendar is re-read every
-`poll_interval`, and each show's page is refetched once a day. **Refresh now**
-re-reads both immediately. A selected show that drops off the calendar, for
+`poll_interval`, and each show's page is refetched once a day. A selected show that drops off the calendar, for
 example between semesters, stays in Your shows and is recorded again when it
 returns. Unselected shows that are no longer on the calendar can be removed
 from the full list.

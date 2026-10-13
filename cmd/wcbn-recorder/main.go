@@ -26,9 +26,12 @@ func main() {
 	test := flag.Duration("test", 0, "record a short test clip of this length now and exit (e.g. 30s)")
 	shows := flag.String("shows", "", "write all shows on the schedule, with descriptions, to this text file and exit")
 	flag.Parse()
-	if os.Getenv("JOURNAL_STREAM") != "" {
-		log.SetFlags(0) // journald adds its own timestamps
-	}
+	// Log output goes to stderr and is kept for the web UI's Logs page. The
+	// times on stderr are added by logs, and left out under journald, which
+	// adds its own.
+	logs := recorder.NewLogs(1000, os.Stderr, os.Getenv("JOURNAL_STREAM") == "")
+	log.SetFlags(0)
+	log.SetOutput(logs)
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
@@ -64,7 +67,7 @@ func main() {
 	if err := db.ImportPrograms(ctx, cfg.Programs); err != nil {
 		log.Fatal(err)
 	}
-	app := recorder.NewApp(cfg, db)
+	app := recorder.NewApp(cfg, db, logs)
 
 	if *list {
 		if !app.Refresh(ctx) {

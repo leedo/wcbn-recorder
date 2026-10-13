@@ -1,0 +1,11 @@
+{{/* The logs page: the recorder's recent log output, newest at the bottom.
+   New lines are added as they're written (see pages.logs in layout.html). */}}
+{{define "logs"}}
+<header class="page-head"><h1>Logs</h1></header>
+<p class="muted log-note">The last {{.Cap}} lines since the recorder started. New lines appear as they're logged.</p>
+<div class="card"><ol class="log" id="log" data-after="{{.Last}}" data-cap="{{.Cap}}">
+{{- range .Lines}}{{template "logline" .}}{{end -}}
+</ol></div>
+{{end}}
+
+{{define "logline"}}<li><time datetime="{{iso .At}}">{{logtime .At}}</time><span>{{.Text}}</span></li>{{end}}
