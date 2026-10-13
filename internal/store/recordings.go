@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"wcbn-recorder/internal/spinitron"
@@ -142,11 +143,37 @@ func (s *Store) AddSong(ctx context.Context, song Song) error {
 
 // Recordings returns every recording, most recent airing first.
 func (s *Store) Recordings(ctx context.Context) ([]Recording, error) {
+	return s.queryRecordings(ctx, ``)
+}
+
+// Recording returns one recording, or sql.ErrNoRows.
+func (s *Store) Recording(ctx context.Context, id int64) (Recording, error) {
+	recs, err := s.queryRecordings(ctx, `WHERE r.id = ?`, id)
+	if err != nil {
+		return Recording{}, err
+	}
+	if len(recs) == 0 {
+		return Recording{}, sql.ErrNoRows
+	}
+	return recs[0], nil
+}
+
+// DeleteRecordingsIn removes every recording whose files are in dir (more
+// than one when an airing was resumed), and their songs.
+func (s *Store) DeleteRecordingsIn(ctx context.Context, dir string) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM recordings WHERE dir = ?`, dir)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func (s *Store) queryRecordings(ctx context.Context, where string, args ...any) ([]Recording, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT r.id, COALESCE(r.show_id, 0), r.airing, r.title, r.dj, r.category, r.description, r.url,
 			r.start_at, r.end_at, r.started_at, r.finished_at, r.dir, r.show_file, r.cue_file, r.playlist, r.cover,
 			r.bytes, r.duration_ms, (SELECT COUNT(*) FROM songs WHERE recording_id = r.id)
-		FROM recordings r ORDER BY r.start_at DESC, r.started_at DESC`)
+		FROM recordings r `+where+` ORDER BY r.start_at DESC, r.started_at DESC`, args...)
 	if err != nil {
 		return nil, err
 	}

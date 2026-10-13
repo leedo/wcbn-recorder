@@ -41,7 +41,14 @@ Listen button; click the show in the bar to scroll back up to the panel.
 Moving between pages doesn't reload the page: the page's script fetches the
 next page and swaps it in, so listening carries on. Every page is still an ordinary URL that works on its own.
 **Recordings** lists everything recorded, newest first, with its length, size,
-song count and folder (see Recordings database below). **Logs** shows the
+song count and folder (see Recordings database below). Recordings in progress
+have an **End recording** button; the others have **Delete**, which, after
+asking to confirm, deletes the recording's folder and everything in it and
+removes it from the database. A resumed airing's recordings share the folder,
+so they go together. With `track_files` off, a recording has no folder of its
+own (its files sit in the program folder), so Delete removes just its show
+file and CUE sheet. The list updates by itself as recordings start and finish.
+**Logs** shows the
 recorder's log output: the last 1,000 lines since it started, with new lines
 added as they're logged. The log is also written to stderr as usual (with
 timestamps, except under journald, which adds its own).

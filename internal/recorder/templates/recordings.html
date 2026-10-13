@@ -1,15 +1,32 @@
-{{/* The recordings page: everything recorded, newest first. */}}
+{{/* The recordings page: everything recorded, newest first, with End
+   recording for ones in progress and Delete for the rest. The page script
+   redraws it when a recording starts, ends or is saved (data-state). */}}
 {{define "recordings"}}
+<div id="recordings" data-state="{{.State}}">
 <header class="page-head"><h1>Recordings{{with .Recordings}} <span class="muted">({{len .}})</span>{{end}}</h1></header>
 {{if .Recordings}}<div class="card"><ul class="list rec-list">
   {{range .Recordings}}<li data-key="rec-{{.ID}}">
     <span class="time">{{when .Start}}</span>
     <div class="show">
       <strong>{{.Title}}</strong>{{with .DJ}} <span class="muted">with {{.}}</span>{{end}}
-      {{if .InProgress}} <span class="tag rec">● recording</span>{{else if .FinishedAt.IsZero}} <span class="tag" title="The recorder stopped before writing this recording's files">unfinished</span>{{end}}
+      {{if .Ending}} <span class="tag">saving</span>{{else if .InProgress}} <span class="tag rec">● recording</span>{{else if .FinishedAt.IsZero}} <span class="tag" title="The recorder stopped before writing this recording's files">unfinished</span>{{end}}
       <div class="sub muted">{{.Dir}}</div>
     </div>
     <div class="info muted">{{if not .InProgress}}{{dur .DurationMs}} · {{mb .Bytes}} · {{end}}{{.Songs}} song{{if ne .Songs 1}}s{{end}}</div>
+    <div class="rec-actions">
+      {{if .InProgress}}{{if not .Ending}}
+      <form method="post" action="/recordings/{{.ID}}/stop" class="stop-form" data-title="{{.Title}}">
+        <input type="hidden" name="from" value="recordings">
+        <button type="submit" class="end-rec">End recording</button>
+      </form>
+      {{end}}{{else}}
+      <form method="post" action="/recordings/{{.ID}}/delete" class="rec-delete-form"
+            data-title="{{.Title}}" data-when="{{when .Start}}" data-dir="{{.Dir}}" data-own-folder="{{.OwnFolder}}">
+        <button type="submit" class="danger" aria-label="Delete the recording of {{.Title}} from {{when .Start}}">Delete</button>
+      </form>
+      {{end}}
+    </div>
   </li>{{end}}
 </ul></div>{{else}}<p class="empty muted">Nothing has been recorded yet.</p>{{end}}
+</div>
 {{end}}

@@ -85,7 +85,8 @@ func TestWebLive(t *testing.T) {
 	f := newFakeRecording(t, testConfig())
 	f.title("Pressure Drop by Toots & the Maytals on Train To Skaville with brian tomsic")
 	f.frames(1, 3)
-	f.Write(nil) // marks the stream connected
+	f.Write(nil)    // marks the stream connected
+	f.catalogID = 7 // as if it were in the recordings table, which End recording needs
 	app.mu.Lock()
 	app.active[f.job.Event.Key()] = f.recording
 	app.mu.Unlock()
@@ -165,7 +166,7 @@ func TestStopRecording(t *testing.T) {
 	cfg.Destination, cfg.StreamURL = t.TempDir(), station.URL
 	now := time.Now()
 	job := Job{Program: "Club H", Event: spinitron.Event{Title: "Club H", Start: now, End: now.Add(time.Hour)}, Until: now.Add(time.Hour)}
-	rec, err := startRecording(cfg, nil, job)
+	rec, err := startRecording(cfg, app.store, job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +197,7 @@ func TestStopRecording(t *testing.T) {
 	if resp := post("/recordings/999/stop"); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("unknown recording: %s", resp.Status)
 	}
-	if resp := post(fmt.Sprintf("/recordings/%d/stop", rec.id)); resp.StatusCode != http.StatusOK {
+	if resp := post(fmt.Sprintf("/recordings/%d/stop", rec.catalogID)); resp.StatusCode != http.StatusOK {
 		t.Fatalf("stop: %s", resp.Status)
 	}
 	select {

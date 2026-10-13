@@ -27,13 +27,13 @@ type App struct {
 	store *store.Store
 	logs  *Logs // recent log output, for the Logs page
 
-	mu          sync.Mutex
-	events      []spinitron.Event
-	refreshErr  error
-	started     map[string]bool
-	active      map[string]*recording
-	runCtx      context.Context // the scheduler's context, once run has started
-	tap         *stationTap     // the shared station connection for listeners
+	mu         sync.Mutex
+	events     []spinitron.Event
+	refreshErr error
+	started    map[string]bool
+	active     map[string]*recording
+	runCtx     context.Context // the scheduler's context, once run has started
+	tap        *stationTap     // the shared station connection for listeners
 
 	// The station's status (current song, bitrate), for the "On air" panel; cached.
 	statusMu sync.Mutex
@@ -58,14 +58,14 @@ func NewApp(cfg *config.Config, store *store.Store, logs *Logs) *App {
 		logs = NewLogs(1, nil, false)
 	}
 	a := &App{
-		cfg:        cfg,
-		store:      store,
-		logs:       logs,
-		started:    map[string]bool{},
-		active:     map[string]*recording{},
-		wake:       make(chan struct{}, 1),
-		changed:    make(chan struct{}),
-		done:       make(chan struct{}),
+		cfg:     cfg,
+		store:   store,
+		logs:    logs,
+		started: map[string]bool{},
+		active:  map[string]*recording{},
+		wake:    make(chan struct{}, 1),
+		changed: make(chan struct{}),
+		done:    make(chan struct{}),
 	}
 	a.tap = newStationTap(cfg, a.recentAudio)
 	return a

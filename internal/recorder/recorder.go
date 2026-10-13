@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"wcbn-recorder/internal/config"
@@ -47,14 +46,10 @@ type trackMark struct {
 	title  string    // the stream title with " on <show> with <dj>" removed
 }
 
-// recordingIDs numbers recordings in progress, for listen URLs.
-var recordingIDs atomic.Int64
-
 type recording struct {
-	id        int64
 	cfg       *config.Config
 	db        *store.Store // lists the recording and its songs; nil for none
-	catalogID int64        // the recording's row in db, once added
+	catalogID int64        // the recording's row in db; 0 if it isn't in one
 	job       Job
 	out       outputs
 	part      string
@@ -126,12 +121,13 @@ func startRecording(cfg *config.Config, db *store.Store, job Job) (*recording, e
 	if err != nil {
 		return nil, err
 	}
-	rec := &recording{id: recordingIDs.Add(1), cfg: cfg, db: db, job: job, out: out, part: part, file: f, started: time.Now(), audio: mpeg.NewFrameWriter(f), resumed: resume}
+	rec := &recording{cfg: cfg, db: db, job: job, out: out, part: part, file: f, started: time.Now(), audio: mpeg.NewFrameWriter(f), resumed: resume}
 	if resume && cfg.TrackFiles {
 		// Carry on the song numbering and playlist of the earlier recording.
 		rec.songBase = lastSongNumber(out.trackDir)
 		rec.songCount = rec.songBase
 	}
+	rec.catalogStart(context.Background()) // before anything else sees rec, so catalogID needs no lock
 	return rec, nil
 }
 
@@ -153,7 +149,6 @@ func (r *recording) Run(ctx context.Context) error {
 	}
 	r.mu.Unlock()
 	go stopAtWallTime(recCtx, job.Until, cancel)
-	r.catalogStart(context.WithoutCancel(ctx))
 	r.startSongWriter(context.WithoutCancel(ctx))
 	backoff := time.Second
 	for recCtx.Err() == nil {

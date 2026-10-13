@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
@@ -51,6 +52,13 @@ func TestRecordings(t *testing.T) {
 		t.Errorf("songs: %+v", songs)
 	}
 
+	if got, err := s.Recording(ctx, id); err != nil || got.ShowFile != "x/.show.mp3" || got.Songs != 2 {
+		t.Errorf("recording %d: %+v, %v", id, got, err)
+	}
+	if _, err := s.Recording(ctx, id+100); err != sql.ErrNoRows {
+		t.Errorf("unknown recording: %v", err)
+	}
+
 	// Removing the show keeps its recordings, unlinked.
 	if err := s.Delete(ctx, shows[0].ID); err != nil {
 		t.Fatal(err)
@@ -58,9 +66,14 @@ func TestRecordings(t *testing.T) {
 	if recs, _ := s.Recordings(ctx); len(recs) != 1 || recs[0].ShowID != 0 {
 		t.Errorf("after removing the show: %+v", recs)
 	}
-	// Removing a recording removes its songs.
-	if err := s.DeleteRecording(ctx, id); err != nil {
-		t.Fatal(err)
+	// Removing a recording removes its songs. Recordings are removed by
+	// folder, which a resumed airing's recordings share.
+	other, _ := s.AddRecording(ctx, Recording{Airing: "x", Title: "Yazoo City Calling", Start: start, End: start, StartedAt: start, Dir: "Yazoo/Yazoo - 2026-09-22"})
+	if n, err := s.DeleteRecordingsIn(ctx, "Train To Skaville/Train To Skaville - 2026-09-21"); err != nil || n != 1 {
+		t.Fatalf("deleted %d, %v", n, err)
+	}
+	if recs, _ := s.Recordings(ctx); len(recs) != 1 || recs[0].ID != other {
+		t.Errorf("left: %+v", recs)
 	}
 	if songs, _ := s.Songs(ctx, id); len(songs) != 0 {
 		t.Errorf("songs left: %+v", songs)

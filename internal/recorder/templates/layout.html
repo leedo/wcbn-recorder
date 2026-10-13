@@ -162,6 +162,10 @@
   ol.log li { display: grid; grid-template-columns: 11em 1fr; gap: 12px; padding: 1px 14px; }
   ol.log time { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
   ol.log span { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .rec-list li { align-items: center; }
+  .rec-actions { min-width: 8.5em; text-align: right; }
+  button.danger { color: var(--rec); }
+  button.danger:hover { border-color: var(--rec); }
   .rec-list .info { text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
 </style>
 <script>
@@ -435,6 +439,26 @@
       button.disabled = false;
     }
   });
+  // Delete, on the Recordings page: confirm, then delete the recording's
+  // files, and redraw the list.
+  document.addEventListener("submit", async e => {
+    const form = e.target.closest(".rec-delete-form");
+    if (!form) return;
+    e.preventDefault();
+    const { title, when, dir, ownFolder } = form.dataset;
+    const what = ownFolder === "true" ? `its folder, ${dir}, and everything in it` : "its show file and CUE sheet";
+    if (!confirm(`Delete the recording of ${title} from ${when}?\n\nThis deletes ${what}. It can't be undone.`)) return;
+    const button = form.querySelector("button");
+    button.disabled = true;
+    try {
+      const res = await fetch(form.action, { method: "POST", headers: { Accept: "application/json" } });
+      if (!res.ok) throw new Error((await res.text()).trim() || res.statusText);
+      await page.refresh?.();
+    } catch (err) {
+      alert("Couldn't delete the recording: " + err.message);
+      button.disabled = false;
+    }
+  });
   // End recording: confirm, then stop it; the panel shows SAVING until the
   // files are written, then disappears.
   document.addEventListener("submit", async e => {
@@ -592,6 +616,25 @@
         const tag = row.querySelector(".rec-tag");
         if (tag) tag.hidden = !recordingShows.has(row.id.replace("show-", ""));
       });
+    },
+  };
+
+  // The recordings page. It's redrawn from the server when the recordings in
+  // progress change (one starts, is ended, or is saved), or after a Delete.
+  let recordingsDraw = 0;
+  pages.recordings = {
+    update(data) {
+      if (data.recordings !== document.getElementById("recordings")?.dataset.state) this.refresh().catch(() => {}); // the next change tries again
+    },
+    async refresh() {
+      const n = ++recordingsDraw;
+      const res = await fetch(location.pathname, { headers: { Accept: "text/html" } });
+      if (!res.ok) throw new Error(res.statusText);
+      const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+      const fresh = doc.getElementById("recordings"), here = document.getElementById("recordings");
+      if (n !== recordingsDraw || !fresh || !here) return; // a later redraw, or another page, won
+      here.dataset.state = fresh.dataset.state;
+      morph(here, fresh.innerHTML);
     },
   };
 

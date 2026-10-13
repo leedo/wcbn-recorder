@@ -86,11 +86,25 @@ type playerView struct {
 
 type recordingView struct {
 	store.Recording
-	InProgress bool
+	InProgress bool // being recorded now
+	Ending     bool // in progress, but ended early or saving its files
+	OwnFolder  bool // Delete removes its folder, not just its files; see ownsFolder
 }
 
 type recordingsData struct {
 	Recordings []recordingView
+	State      string // see recordingsState
+}
+
+// recordingsState sums up the recordings in progress, so the Recordings page
+// can tell from the event stream when to redraw its list: when one starts,
+// is ended, or finishes saving.
+func recordingsState(active []liveStatus) string {
+	var parts []string
+	for _, st := range active {
+		parts = append(parts, fmt.Sprintf("%d:%t", st.ID, st.Finishing || st.Stopped))
+	}
+	return strings.Join(parts, ",")
 }
 
 type logsData struct {
@@ -152,18 +166,16 @@ func (a *App) Handler() http.Handler {
 			httpError(w, err)
 			return
 		}
-		a.mu.Lock()
-		active := map[string]bool{}
-		for key := range a.active {
-			active[key] = true
+		active := map[int64]liveStatus{}
+		for _, st := range data.Recording {
+			active[st.ID] = st
 		}
-		a.mu.Unlock()
-		var page recordingsData
+		page := recordingsData{State: recordingsState(data.Recording)}
 		for _, rec := range recs {
-			// The latest row for an airing being recorded is the one in progress.
-			inProgress := rec.FinishedAt.IsZero() && active[rec.Airing]
-			active[rec.Airing] = false
-			page.Recordings = append(page.Recordings, recordingView{Recording: rec, InProgress: inProgress})
+			st, inProgress := active[rec.ID]
+			page.Recordings = append(page.Recordings, recordingView{
+				Recording: rec, InProgress: inProgress, Ending: st.Finishing || st.Stopped, OwnFolder: ownsFolder(rec.Dir),
+			})
 		}
 		render(w, tmpl, "layout", layoutData{Page: "recordings", Title: "Recordings", Live: data, Data: page})
 	})
@@ -194,7 +206,7 @@ func (a *App) Handler() http.Handler {
 		}
 		return json.Marshal(map[string]any{
 			"player": player.String(), "live": live.String(), "upcoming": upcoming.String(), "mine": mine.String(),
-			"recording": len(data.Recording), "recordingShows": recordingShows,
+			"recording": len(data.Recording), "recordingShows": recordingShows, "recordings": recordingsState(data.Recording),
 			"refreshErr": data.RefreshErr,
 		})
 	}
@@ -314,7 +326,33 @@ func (a *App) Handler() http.Handler {
 			writeJSON(w, map[string]any{"stopped": true})
 			return
 		}
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		target := "/"
+		if r.FormValue("from") == "recordings" {
+			target = "/recordings"
+		}
+		http.Redirect(w, r, target, http.StatusSeeOther)
+	})
+	// Delete a finished recording: its files, and its rows in the database.
+	mux.HandleFunc("POST /recordings/{id}/delete", func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		n, err := a.deleteRecording(r.Context(), id)
+		if errors.Is(err, errInProgress) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		if wantsJSON(r) {
+			writeJSON(w, map[string]any{"deleted": n})
+			return
+		}
+		http.Redirect(w, r, "/recordings", http.StatusSeeOther)
 	})
 	mux.HandleFunc("POST /shows/{id}/record", func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -392,16 +430,17 @@ func (a *App) Handler() http.Handler {
 	return http.NewCrossOriginProtection().Handler(mux)
 }
 
-// activeRecording finds a recording in progress by its id.
+// activeRecording finds a recording in progress by its id in the recordings
+// table.
 func (a *App) activeRecording(id string) *recording {
 	n, err := strconv.ParseInt(id, 10, 64)
-	if err != nil {
+	if err != nil || n == 0 {
 		return nil
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	for _, rec := range a.active {
-		if rec.id == n {
+		if rec.catalogID == n {
 			return rec
 		}
 	}
