@@ -19,7 +19,7 @@
     {{if not .Start.IsZero}}<span class="slot muted">{{clock .Start}} – {{clock .End}}</span>{{end}}
   </div>
   {{if not .Start.IsZero}}<div class="progress" role="progressbar" aria-label="Show progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Progress}}"><div style="width: {{.Progress}}%"></div></div>{{end}}
-  <div class="stats muted">Not recording{{with .Bitrate}} · {{.}} kbps{{end}}{{if .Selected}} · this show is in Your shows{{end}}</div>
+  <div class="stats muted">Not recording{{with .Bitrate}} · {{.}} kbps{{end}}{{if .Selected}} · this show is selected for recording{{end}}</div>
   <div class="live-foot">
     {{if .Song}}
     <div class="now-playing">
@@ -54,7 +54,7 @@
     {{if or .Finishing .Stopped}}<span class="badge">SAVING</span>
     {{else if .Connected}}<span class="badge rec"><span class="dot"></span>REC</span>
     {{else}}<span class="badge warn">RECONNECTING</span>{{end}}
-    <h2>{{if .ShowID}}<a href="/shows#mine-{{.ShowID}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
+    <h2>{{if .ShowID}}<a href="/shows#show-{{.ShowID}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
     {{with .DJ}}<span class="muted">with {{.}}</span>{{end}}
     <span class="slot muted">{{clock .Start}} – {{clock .End}}</span>
   </div>
@@ -92,8 +92,8 @@
 
 {{define "upcoming"}}
 {{if .Upcoming}}<ul class="list">
-  {{range .Upcoming}}<li><span class="time">{{when .Start}} – {{clock .End}}</span><span><a href="/shows#mine-{{.ShowID}}">{{.Title}}</a>{{with .DJ}} <span class="muted">with {{.}}</span>{{end}}</span></li>{{end}}
-</ul>{{else if .Selected}}<p class="empty muted">None of your shows air in the next week.</p>{{else}}<p class="empty muted">You're not recording any shows yet. Pick some on <a href="/shows#add-shows">Shows</a>.</p>{{end}}
+  {{range .Upcoming}}<li><span class="time">{{when .Start}} – {{clock .End}}</span><span><a href="/shows#show-{{.ShowID}}">{{.Title}}</a>{{with .DJ}} <span class="muted">with {{.}}</span>{{end}}</span></li>{{end}}
+</ul>{{else if .Selected}}<p class="empty muted">None of your shows air in the next week.</p>{{else}}<p class="empty muted">You're not recording any shows yet. Pick some on <a href="/shows">Shows</a>.</p>{{end}}
 {{end}}
 
 {{define "art"}}

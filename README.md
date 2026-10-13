@@ -54,18 +54,15 @@ added as they're logged. The log is also written to stderr as usual (with
 timestamps, except under journald, which adds its own).
 
 **Upcoming** lists the selected shows coming up in the next week. The
-**Shows** page has **Your shows**, the list of selected shows with their next
-airing and a **Remove** button.
-
-Below it, **Add shows** lists every show on the calendar, with its DJ and
-category (under the title) and next airing. Search it by show or DJ, or filter
-it by category, and click **+ Add** to add a show: it appears in Your shows,
-highlighted, and you stay in the list to add more. Shows already in Your shows
-are marked **✓ Added**; remove them from Your shows. `/shows#add-shows` links
-straight to the list (old `/?add=1` and `/shows?add=1` links redirect there).
+**Shows** page lists every show on the calendar, with its DJ and category
+(under the title) and next airing. Search it by show or DJ, or filter it by
+category. Click **+ Add** to record a show; the shows you're recording are
+highlighted and have **Remove** instead. Old `/?add=1` and `/shows?add=1` links
+redirect to the Shows page. Shows no longer on the calendar have a **delete**
+link (unless they're selected) to take them off the list.
 Click a column header to sort by it, and click again to reverse. "Next
-airing" sorts by date. The Add
-column, on the right, isn't sortable. The sort is remembered, and links can set it with
+airing" sorts by date. The button column, on the right, isn't sortable. The
+sort is remembered, and links can set it with
 `?sort=<column number>&dir=asc|desc` (columns count from 0).
 
 Selecting a show that is on the air starts recording right away. Removing a show
@@ -121,9 +118,9 @@ or the schedule is refreshed, and every second while recording.
 
 Show details come from Spinitron. The calendar is re-read every
 `poll_interval`, and each show's page is refetched once a day. A selected show that drops off the calendar, for
-example between semesters, stays in Your shows and is recorded again when it
-returns. Unselected shows that are no longer on the calendar can be removed
-from the full list.
+example between semesters, stays selected and is recorded again when it
+returns. Unselected shows that are no longer on the calendar can be deleted
+from the list.
 
 The UI has no login, so by default it only listens on `127.0.0.1`. To reach it
 from another machine, use an SSH tunnel (`ssh -L 8080:127.0.0.1:8080 server`)
@@ -323,9 +320,9 @@ small Flickr or Spinitron thumbnail). A few shows link Flickr images that no
 longer exist; those recordings get the WCBN station logo instead. Only JPEG and PNG images are used, and a
 recording goes ahead without art if none can be downloaded.
 
-The web UI shows the same artwork as thumbnails in the live panel, Your shows
-and the full show list, loaded by your browser straight from Spinitron and
-Flickr (the full list's images only load when you open it and scroll to them).
+The web UI shows the same artwork as thumbnails in the live panel and the show
+list, loaded by your browser straight from Spinitron and Flickr (the list's
+images only load as you scroll to them).
 The artwork URLs are stored with the other show details and refreshed daily.
 Broken images fall back to the station logo.
 

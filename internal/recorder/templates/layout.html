@@ -66,23 +66,17 @@
   .tag.rec { border-color: var(--rec); color: var(--rec); }
   button { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; white-space: nowrap; }
   button:hover { border-color: var(--muted); }
-  button.toggle:disabled { cursor: default; color: var(--muted); border-color: transparent; background: none; }
   button.link { border: 0; background: none; padding: 0; color: var(--muted); text-decoration: underline; font-size: 12px; }
   form { display: inline; margin: 0; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   [hidden] { display: none !important; } /* rules like the one above would otherwise override it */
   .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 32px 0 10px; }
   .section-head h2 { margin: 0; white-space: nowrap; }
-  /* In Add shows, the search box and category filter share the heading row. */
+  /* On the Shows page, the search box and category filter share a row. */
   .section-head .controls { flex: 1 1 360px; flex-wrap: nowrap; margin: 0; }
   .section-head .controls input[type=search] { min-width: 120px; }
   .section-head :is(input, select) { box-sizing: border-box; height: 34px; }
   #browse { scroll-margin-top: 16px; }
-  .mine-list li { align-items: center; }
-  .mine-list .show { flex: 1; min-width: 0; }
-  .mine-list .show a { font-weight: 600; text-decoration: none; }
-  .mine-list .show a:hover { text-decoration: underline; }
-  .mine-list .sub { font-size: 13px; }
-  .mine-list .when { text-align: right; font-size: 14px; font-variant-numeric: tabular-nums; }
 
   /* Show artwork */
   .art { display: block; flex: none; object-fit: cover; border-radius: 6px; background: var(--line); }
@@ -149,7 +143,7 @@
   .player-song { font-size: 13px; }
 
   /* Recordings page */
-  main > .section-head:first-child { margin-top: 8px; } /* Your shows, at the top of the Shows page; lined up with the other pages' headings */
+  main > .section-head:first-child { margin-top: 8px; } /* the search row, at the top of the Shows page; lined up with the other pages */
   .rec-list .show { flex: 1; min-width: 0; }
   .rec-list .sub { font-size: 13px; overflow-wrap: anywhere; }
   /* Logs page */
@@ -377,17 +371,21 @@
   // Buttons that change things post with fetch and update the page in place
   // (a page load would stop the audio); the forms still work without JS.
   // Delegated, since the page's contents are replaced.
+  // setRowState shows a show's row in the show list as selected for
+  // recording (highlighted, with Remove) or not (with + Add).
   function setRowState(id, record) {
     const row = document.getElementById("show-" + id);
-    if (!row) return;
+    if (!row || row.classList.contains("selected") === record) return;
     row.classList.toggle("selected", record);
+    row.querySelector(".toggle-form input[name=record]").value = record ? "0" : "1";
     const button = row.querySelector(".toggle");
-    button.disabled = record;
-    button.textContent = record ? "✓ Added" : "+ Add";
-    const remove = row.querySelector(".delete-form"); // only shows not on the schedule have one
-    if (remove) remove.hidden = record;
+    const title = row.querySelector("td.title").dataset.title;
+    button.textContent = record ? "Remove" : "+ Add";
+    button.setAttribute("aria-label", (record ? "Stop recording " : "Record ") + title);
+    const del = row.querySelector(".delete-form"); // only shows not on the schedule have one
+    if (del) del.hidden = record;
   }
-  // Record/Remove, in both lists and the On air panel.
+  // + Add / Remove in the show list, and Record in the On air panel.
   document.addEventListener("submit", async e => {
     const form = e.target.closest(".toggle-form");
     if (!form) return;
@@ -400,20 +398,10 @@
       const data = await res.json();
       setRowState(data.id, data.record);
       page.selectionChanged?.(data); // the live card's Record button works on every page
-      if (data.record && form.closest("#browse")) {
-        // Added from the show list: highlight it in Your shows, above, without
-        // leaving the list, so more can be added. An animation, not a class:
-        // refreshes keep attributes in step with the server, and would drop a
-        // class straight away.
-        const row = document.getElementById("mine-" + data.id);
-        const from = getComputedStyle(document.documentElement).getPropertyValue("--accent-bg");
-        row?.animate([{ background: from }, { background: "transparent" }], { duration: 2500, easing: "ease-out" });
-      }
     } catch (err) {
       alert("Couldn't update: " + err.message);
     } finally {
-      // A show added from the list stays "✓ Added" (disabled); see setRowState.
-      button.disabled = form.closest("tr")?.classList.contains("selected") ?? false;
+      button.disabled = false;
     }
   });
   // Remove a show that's no longer on the calendar.
@@ -509,7 +497,7 @@
     },
   };
 
-  // The shows page: Your shows, and the full show list.
+  // The shows page: the list of every show, to search, sort, and add or remove.
   pages.shows = {
     init(main) {
       const browse = main.querySelector("#browse");
@@ -568,17 +556,15 @@
       if (params.has("sort")) saved = { col: Number(params.get("sort")), dir: params.get("dir") === "desc" ? "desc" : "asc" };
       if (saved && headers[saved.col]?.querySelector("button.sort")) sortBy(saved.col, saved.dir);
     },
-    // Record/Remove changed what's selected.
-    selectionChanged(data) {
-      morph(document.getElementById("mine"), data.mine);
-      document.getElementById("selected-count").textContent = `(${data.selected})`;
-    },
+    // Keep the rows in step with selections made elsewhere (the On air
+    // panel's Record button, another tab) and with what's being recorded.
     update(data) {
-      morph(document.getElementById("mine"), data.mine);
-      const recordingShows = new Set(data.recordingShows.map(String));
+      const selected = new Set(data.selectedShows.map(String)), recording = new Set(data.recordingShows.map(String));
       document.querySelectorAll("#browse tbody tr").forEach(row => {
+        const id = row.id.replace("show-", "");
+        setRowState(id, selected.has(id));
         const tag = row.querySelector(".rec-tag");
-        if (tag) tag.hidden = !recordingShows.has(row.id.replace("show-", ""));
+        if (tag) tag.hidden = !recording.has(id);
       });
     },
   };

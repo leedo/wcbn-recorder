@@ -50,8 +50,7 @@ type pageData struct {
 	RefreshErr  string
 	Recording   []liveStatus
 	Upcoming    []jobView
-	Shows       []showView // every known show, for the "Add shows" list
-	Mine        []showView // shows selected for recording, soonest first
+	Shows       []showView // every known show, for the Shows page
 	Categories  []string
 	Selected    int
 	StationLogo string     // fallback artwork
@@ -184,7 +183,7 @@ func (a *App) Handler() http.Handler {
 		if err != nil {
 			return nil, err
 		}
-		var player, live, upcoming, mine bytes.Buffer
+		var player, live, upcoming bytes.Buffer
 		if err := tmpl.ExecuteTemplate(&player, "player", data.Player); err != nil {
 			return nil, err
 		}
@@ -194,18 +193,20 @@ func (a *App) Handler() http.Handler {
 		if err := tmpl.ExecuteTemplate(&upcoming, "upcoming", data); err != nil {
 			return nil, err
 		}
-		if err := tmpl.ExecuteTemplate(&mine, "mine", data); err != nil {
-			return nil, err
-		}
-		recordingShows := []int64{} // for the ● recording tags in the full list
+		// For the show list: the shows selected (Add or Remove) and the ones
+		// being recorded (the ● recording tags).
+		selectedShows, recordingShows := []int64{}, []int64{}
 		for _, sh := range data.Shows {
+			if sh.Record {
+				selectedShows = append(selectedShows, sh.ID)
+			}
 			if sh.RecordingNow {
 				recordingShows = append(recordingShows, sh.ID)
 			}
 		}
 		return json.Marshal(map[string]any{
-			"player": player.String(), "live": live.String(), "upcoming": upcoming.String(), "mine": mine.String(),
-			"recording": len(data.Recording), "recordingShows": recordingShows, "recordings": recordingsState(data.Recording),
+			"player": player.String(), "live": live.String(), "upcoming": upcoming.String(),
+			"recording": len(data.Recording), "selectedShows": selectedShows, "recordingShows": recordingShows, "recordings": recordingsState(data.Recording),
 			"refreshErr": data.RefreshErr,
 		})
 	}
@@ -377,35 +378,25 @@ func (a *App) Handler() http.Handler {
 		a.notify()
 		if !wantsJSON(r) {
 			// Without JS, go back to where the button was pressed.
-			target := "/shows"
-			switch r.FormValue("from") {
-			case "add":
-				target = fmt.Sprintf("/shows#show-%d", id) // back to the show in the list, to add more
-			case "onair":
+			target := fmt.Sprintf("/shows#show-%d", id) // back to the show in the list
+			if r.FormValue("from") == "onair" {
 				target = "/"
 			}
 			http.Redirect(w, r, target, http.StatusSeeOther)
 			return
 		}
-		// Send back the re-rendered lists so the page can update in place.
+		// Send back the re-rendered upcoming list so the page can update in place.
 		data, err := a.pageData(r.Context())
 		if err != nil {
 			httpError(w, err)
 			return
 		}
-		var upcoming, mine bytes.Buffer
+		var upcoming bytes.Buffer
 		if err := tmpl.ExecuteTemplate(&upcoming, "upcoming", data); err != nil {
 			httpError(w, err)
 			return
 		}
-		if err := tmpl.ExecuteTemplate(&mine, "mine", data); err != nil {
-			httpError(w, err)
-			return
-		}
-		writeJSON(w, map[string]any{
-			"id": id, "record": record, "selected": data.Selected,
-			"upcoming": upcoming.String(), "mine": mine.String(),
-		})
+		writeJSON(w, map[string]any{"id": id, "record": record, "upcoming": upcoming.String()})
 	})
 	mux.HandleFunc("POST /shows/{id}/delete", func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -508,23 +499,7 @@ func (a *App) pageData(ctx context.Context) (pageData, error) {
 			RecordingNow: recordingNow[sh.Key],
 		}
 		data.Shows = append(data.Shows, v)
-		if sh.Record {
-			data.Mine = append(data.Mine, v)
-		}
 	}
-	// Your shows: on air or airing soonest first, then shows off the calendar.
-	slices.SortStableFunc(data.Mine, func(x, y showView) int {
-		switch {
-		case x.OnCalendar != y.OnCalendar:
-			if x.OnCalendar {
-				return -1
-			}
-			return 1
-		case x.OnCalendar:
-			return x.NextAiring.Compare(y.NextAiring)
-		}
-		return 0 // already sorted by title
-	})
 	for c := range categories {
 		data.Categories = append(data.Categories, c)
 	}

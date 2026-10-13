@@ -357,29 +357,29 @@ func TestRecordingTagClearsAfterEnd(t *testing.T) {
 	app.started[ev.Key()], app.active[ev.Key()] = true, f.recording
 	app.mu.Unlock()
 
-	live := func() (mine, upcoming string, tagged []int64) {
+	live := func() (upcoming string, selected, tagged []int64) {
 		t.Helper()
 		var out struct {
-			Mine, Upcoming string
-			RecordingShows []int64
+			Upcoming                      string
+			SelectedShows, RecordingShows []int64
 		}
 		firstEvent(t, srv.URL, &out)
-		return out.Mine, out.Upcoming, out.RecordingShows
+		return out.Upcoming, out.SelectedShows, out.RecordingShows
 	}
-	if mine, _, tagged := live(); !strings.Contains(mine, "● recording") || len(tagged) != 1 || tagged[0] != id {
-		t.Fatalf("while recording: tagged %v, mine has tag %v", tagged, strings.Contains(mine, "● recording"))
+	if _, _, tagged := live(); len(tagged) != 1 || tagged[0] != id {
+		t.Fatalf("while recording: tagged %v", tagged)
 	}
 
 	// End recording: Stop marks it stopped right away, while files are saved.
 	f.Stop()
-	mine, upcoming, tagged := live()
-	if strings.Contains(mine, "● recording") || len(tagged) != 0 {
-		t.Errorf("after ending: tagged %v, mine still has tag %v", tagged, strings.Contains(mine, "● recording"))
+	upcoming, selected, tagged := live()
+	if len(tagged) != 0 {
+		t.Errorf("after ending: tagged %v", tagged)
 	}
 	if strings.Contains(upcoming, ev.Title) {
 		t.Errorf("the ended airing is listed as upcoming:\n%s", upcoming)
 	}
-	if !strings.Contains(mine, ev.Title) {
-		t.Error("the show should still be in Your shows")
+	if len(selected) != 1 || selected[0] != id {
+		t.Errorf("the show should still be selected: %v", selected)
 	}
 }

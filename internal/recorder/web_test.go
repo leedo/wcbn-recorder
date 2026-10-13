@@ -57,21 +57,20 @@ func get(t *testing.T, u string) string {
 
 func TestWebToggle(t *testing.T) {
 	app, srv := testApp(t)
-	if home := get(t, srv.URL+"/"); !strings.Contains(home, `Pick some on <a href="/shows#add-shows">Shows</a>`) || strings.Contains(home, `id="browse"`) {
+	if home := get(t, srv.URL+"/"); !strings.Contains(home, `Pick some on <a href="/shows">Shows</a>`) || strings.Contains(home, `id="browse"`) {
 		t.Errorf("home page should point to Shows, not list them:\n%s", home)
 	}
 	page := get(t, srv.URL+"/shows")
-	if !strings.Contains(page, "Train To Skaville") || !strings.Contains(page, "not recording any shows yet") || !strings.Contains(page, `<main id="page" data-page="shows"`) {
+	if !strings.Contains(page, "Train To Skaville") || !strings.Contains(page, `<main id="page" data-page="shows"`) {
 		t.Fatalf("unexpected page:\n%s", page)
 	}
-	// Your shows, then the full list to add from, always shown: there's no
-	// button to open it.
-	mine, add := strings.Index(page, `<div class="card" id="mine">`), strings.Index(page, `<section id="browse" aria-label="Every show on the calendar">`)
-	if mine < 0 || add < mine || !strings.Contains(page, `<div class="section-head" id="add-shows">`) || strings.Contains(page, `id="add-toggle"`) {
-		t.Error("the shows page should have Your shows, then Add shows below it")
+	// Just the search and the list of every show: no Your shows, no heading.
+	if !strings.Contains(page, `<section id="browse" aria-label="Every show on the calendar">`) || !strings.Contains(page, `id="q"`) ||
+		strings.Contains(page, `id="mine"`) || strings.Contains(page, "Your shows") || strings.Contains(page, "<h2>Add shows</h2>") {
+		t.Error("the shows page should be just the search and the show list")
 	}
-	if !strings.Contains(page, `Pick some from <a href="#add-shows">Add shows</a>, below.`) {
-		t.Error("an empty Your shows should point to Add shows")
+	if !strings.Contains(page, `<input type="hidden" name="record" value="1">`) || !strings.Contains(page, `aria-label="Record Train To Skaville">+ Add</button>`) {
+		t.Error("a show that isn't selected should have + Add")
 	}
 	if strings.Contains(page, "Refresh now") || strings.Contains(page, "Schedule updated") {
 		t.Error("the page shouldn't show when the schedule was updated, or a Refresh button")
@@ -79,7 +78,7 @@ func TestWebToggle(t *testing.T) {
 	if strings.Contains(page, "<script>alert(1)</script>") {
 		t.Error("show title was not escaped")
 	}
-	if !strings.Contains(page, `<td class="title" data-sort="train to skaville">`) || !strings.Contains(page, `class="sort" data-col="1" data-type="number">Next airing`) {
+	if !strings.Contains(page, `<td class="title" data-sort="train to skaville" data-title="Train To Skaville">`) || !strings.Contains(page, `class="sort" data-col="1" data-type="number">Next airing`) {
 		t.Error("missing sort attributes")
 	}
 	// The DJ and category are under the show's title, not in columns of their
@@ -108,28 +107,23 @@ func TestWebToggle(t *testing.T) {
 	var out struct {
 		ID       int64
 		Record   bool
-		Selected int
 		Upcoming string
-		Mine     string
 	}
 	json.NewDecoder(resp.Body).Decode(&out)
 	resp.Body.Close()
-	if resp.StatusCode != 200 || !out.Record || out.Selected != 1 || strconv.FormatInt(out.ID, 10) != id ||
-		!strings.Contains(out.Upcoming, "Train To Skaville") || !strings.Contains(out.Mine, `id="mine-`+id+`"`) {
+	if resp.StatusCode != 200 || !out.Record || strconv.FormatInt(out.ID, 10) != id || !strings.Contains(out.Upcoming, "Train To Skaville") {
 		t.Fatalf("toggle: %s %+v", resp.Status, out)
 	}
 
-	// With a show selected, the shows page lists it in Your shows, and marks
-	// it in the list below. The home page has it coming up.
+	// With a show selected, its row in the list is highlighted, with Remove.
+	// The home page has it coming up, linked to its row.
 	page = get(t, srv.URL+"/shows")
-	if !strings.Contains(page, `<li id="mine-`+id+`">`) || !strings.Contains(page, `<section id="browse" aria-label`) {
-		t.Error("shows page should show Your shows and the show list")
+	if !strings.Contains(page, `<tr id="show-`+id+`" class="selected `) || !strings.Contains(page, `<input type="hidden" name="record" value="0">`) ||
+		!strings.Contains(page, `aria-label="Stop recording Train To Skaville">Remove</button>`) {
+		t.Error("a selected show should be highlighted, with Remove")
 	}
-	if home := get(t, srv.URL+"/"); !strings.Contains(home, `<a href="/shows#mine-`+id+`">Train To Skaville</a>`) {
-		t.Error("home page should list the show's next airing, linked to it in Your shows")
-	}
-	if !strings.Contains(page, `class="toggle" disabled>✓ Added</button>`) {
-		t.Error("a show already in Your shows should be marked Added")
+	if home := get(t, srv.URL+"/"); !strings.Contains(home, `<a href="/shows#show-`+id+`">Train To Skaville</a>`) {
+		t.Error("home page should list the show's next airing, linked to it on the Shows page")
 	}
 	if sel, _ := app.store.Selected(context.Background()); len(sel) != 1 {
 		t.Errorf("selected = %d", len(sel))
@@ -138,8 +132,9 @@ func TestWebToggle(t *testing.T) {
 	// No-JS path: a plain form post redirects back to where it came from.
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	for _, tc := range []struct{ from, record, want string }{
-		{"add", "1", "/shows#show-" + id},
-		{"mine", "0", "/shows"},
+		{"onair", "1", "/"},
+		{"shows", "1", "/shows#show-" + id},
+		{"shows", "0", "/shows#show-" + id},
 	} {
 		resp, err = client.PostForm(srv.URL+"/shows/"+id+"/record", url.Values{"record": {tc.record}, "from": {tc.from}})
 		if err != nil {
@@ -195,12 +190,9 @@ func TestWebArtwork(t *testing.T) {
 	app.store.SetSetting(ctx, "station_logo", "https://spinitron.com/images/Station/22/2263-img_logo.225x225.jpg")
 
 	page := get(t, srv.URL+"/shows")
-	want := `<img class="art art-md" src="https://farm6.staticflickr.com/5017/5476585780_087d4791ae_m.jpg" alt="" data-fallback="https://spinitron.com/images/Station/22/2263-img_logo.225x225.jpg" loading="lazy"`
+	want := `<img class="art art-sm" src="https://farm6.staticflickr.com/5017/5476585780_087d4791ae_m.jpg" alt="" data-fallback="https://spinitron.com/images/Station/22/2263-img_logo.225x225.jpg" loading="lazy"`
 	if !strings.Contains(page, want) {
-		t.Errorf("Your shows artwork missing:\n%s", want)
-	}
-	if !strings.Contains(page, `class="art art-sm" src="https://farm6.staticflickr.com/5017/5476585780_087d4791ae_m.jpg"`) {
-		t.Error("full list artwork missing")
+		t.Errorf("show list artwork missing:\n%s", want)
 	}
 	if strings.Contains(page, "javascript:") {
 		t.Error("javascript: URL reached the page")
@@ -247,7 +239,7 @@ func TestWebEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	type event struct{ Mine string }
+	type event struct{ SelectedShows []int64 }
 	events := make(chan event)
 	go func() {
 		defer close(events)
@@ -271,19 +263,21 @@ func TestWebEvents(t *testing.T) {
 			return event{}, false
 		}
 	}
-	if e, _ := next(); strings.Contains(e.Mine, "Train To Skaville") {
-		t.Fatal("show listed before it was added")
+	if e, _ := next(); len(e.SelectedShows) != 0 {
+		t.Fatalf("shows selected before any were added: %v", e.SelectedShows)
 	}
 
 	shows, _ := app.store.Shows(context.Background())
+	var id int64
 	for _, sh := range shows {
 		if sh.Title == "Train To Skaville" {
+			id = sh.ID
 			app.store.SetRecord(context.Background(), sh.ID, true)
 		}
 	}
 	app.notify()
-	if e, _ := next(); !strings.Contains(e.Mine, "Train To Skaville") {
-		t.Errorf("added show missing from Your shows:\n%s", e.Mine)
+	if e, _ := next(); len(e.SelectedShows) != 1 || e.SelectedShows[0] != id {
+		t.Errorf("selected shows = %v, want [%d]", e.SelectedShows, id)
 	}
 
 	close(app.done)
