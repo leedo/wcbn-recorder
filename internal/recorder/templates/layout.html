@@ -12,11 +12,13 @@
   :root {
     --bg: #fafaf8; --fg: #1d1d1f; --muted: #6b6b70; --line: #e3e3e0;
     --accent: #b3122d; --accent-bg: #fbe9ec; --rec: #c4141c; --card: #fff;
+    --listen-icon: var(--fg); /* the play icon; white on the dark theme's circle */
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #161618; --fg: #ececee; --muted: #9a9aa2; --line: #2e2e33;
       --accent: #ff6b81; --accent-bg: #3a1d24; --rec: #ff4d55; --card: #1f1f22;
+      --listen-icon: #fff;
     }
   }
   * { box-sizing: border-box; }
@@ -116,13 +118,15 @@
   .now-playing .song { font-size: 22px; font-weight: 650; line-height: 28px; }
   .now-playing .artist { font-size: 16px; line-height: 23px; }
   .now-playing .meta { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
-  button.listen { display: grid; place-items: center; flex: none; width: 40px; height: 40px; padding: 0; border-radius: 50%; border: 2px solid var(--rec); background: none; color: var(--rec); }
-  button.listen:hover { border-color: var(--rec); background: color-mix(in srgb, var(--rec) 12%, transparent); }
+  /* A circle a little lighter than the card (darker, on the light theme),
+     with no outline; red while playing. */
+  button.listen { display: grid; place-items: center; flex: none; width: 40px; height: 40px; padding: 0; border-radius: 50%; border: 0; background: color-mix(in srgb, var(--fg) 10%, var(--card)); color: var(--listen-icon); }
+  button.listen:hover { background: color-mix(in srgb, var(--fg) 16%, var(--card)); }
   button.listen svg { grid-area: 1 / 1; width: 58%; height: 58%; fill: currentColor; }
   button.listen .icon-play { translate: 6% 0; } /* a triangle looks centred a little right of centre */
   button.listen .icon-stop, button.listen[aria-pressed=true] .icon-play { display: none; }
   button.listen[aria-pressed=true] .icon-stop { display: block; }
-  button.listen[aria-pressed=true] { background: var(--rec); color: #fff; }
+  button.listen[aria-pressed=true], button.listen[aria-pressed=true]:hover { background: var(--rec); color: #fff; }
   button.listen[data-state=connecting] { animation: pulse 1.6s infinite; }
   button.listen:focus-visible { outline: 2px solid var(--rec); outline-offset: 2px; }
   button.end-rec { padding: 5px 12px; }
