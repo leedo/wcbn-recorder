@@ -33,15 +33,17 @@ internal/recorder/    scheduler, recording, song files, web UI (templates/)
 
 ## Web UI
 
-The UI has two pages, **Home** and **Recordings**, with the player bar (see
-Listening below) across the top of both. Moving between them doesn't reload the
-page: the page's script fetches the next page and swaps it in, so the player
-keeps playing. Every page is still an ordinary URL that works on its own.
+The UI has two pages, **Home** and **Recordings**, with the live panel (what's
+on air or recording, described below) at the top of both. Scroll it out of view
+and it shrinks into a bar pinned to the top of the window, with the show's
+artwork, title and DJ, the current song, a REC badge while recording, and the
+Listen button; click the show in the bar to scroll back up to the panel.
+Moving between pages doesn't reload the page: the page's script fetches the
+next page and swaps it in, so listening carries on. Every page is still an ordinary URL that works on its own.
 **Recordings** lists everything recorded, newest first, with its length, size,
 song count and folder (see Recordings database below).
 
-The home page shows what you're recording: the live panel (while a show is on
-the air), the selected shows coming up in the next week, and **Your shows**, the
+The home page shows the selected shows coming up in the next week, and **Your shows**, the
 list of selected shows with their next airing and a **Remove** button.
 
 **+ Add shows** swaps Your shows for the list of every show on the calendar, in
@@ -58,32 +60,25 @@ column, on the right, isn't sortable. The sort is remembered, and links can set 
 Selecting a show that is on the air starts recording right away. Removing a show
 that is being recorded lets that recording finish.
 
-When nothing is recording, the top of the page shows what's **on air**: the
+When nothing is recording, the live panel shows what's **on air**: the
 current program from the schedule, with its artwork, DJ, time slot and progress,
 and the song playing now and the stream's bitrate (read from the station's
 Icecast status page, at most every 10 seconds). **+ Record this show** selects the program and starts
 recording it immediately (it reads **● Record now** if the show is already
 selected, for example after ending a recording).
 
-While a show is recording, a live panel sits at the top of the page. It shows:
+While a show is recording, the live panel shows the recording instead:
 
 - **status:** REC, RECONNECTING (with the last error), or SAVING while the files
   are written
 - **progress:** how far through the time slot the show is, how much has been
   recorded, the stream's bitrate (read from the MP3 frames being saved), and
   when recording stops
-- **now playing:** the current song's title and artist, when it started, and how
-  long it has played
-- **songs recorded so far:** an expandable list in air order, numbered the same
-  way as the song files
+- **now playing:** the current song's title and artist
 
 ### Listening
 
-The player bar sits under the navigation and stays pinned to the top of the
-window as the page scrolls. It's shown whenever a show is on the air (from the
-schedule) or being recorded, and while you're listening, with the show's
-artwork, title and DJ, the current song, and a REC badge while recording.
-Its **▶ Listen** button plays the station through the recorder at
+**▶ Listen**, on the live panel or the pinned bar, plays the station through the recorder at
 `/listen`. It's one continuous stream, whatever is or isn't being recorded, so
 it keeps playing when a recording starts or ends and when the station moves on
 to the next show. **■ Stop listening** disconnects. While it's playing, the
@@ -111,8 +106,7 @@ folder (see Resuming below).
 
 The server pushes updates to the page (server-sent events, at `/events`) while
 it's visible: right away when a recording starts or ends, a show is selected,
-or the schedule is refreshed, and every second while recording. An
-expanded song list stays open across updates.
+or the schedule is refreshed, and every second while recording.
 
 Show details come from Spinitron. The calendar is re-read every
 `poll_interval`, and each show's page is refetched once a day. **Refresh now**

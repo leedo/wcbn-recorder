@@ -86,8 +86,8 @@ func TestWebOnAir(t *testing.T) {
 			t.Errorf("On air card missing %q", want)
 		}
 	}
-	// The player bar shows the show and song, and stays up while it's on.
-	for _, want := range []string{`<div id="player">`, `data-active="true"`, `<strong>Train To Skaville</strong> <span class="muted">with brian tomsic</span>`,
+	// The player bar, the card's compact form, has the show and song too.
+	for _, want := range []string{`<div id="player">`, `<strong>Train To Skaville</strong> <span class="muted">with brian tomsic</span>`,
 		"West Coast Blues — Blind Blake", `class="listen"`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("player bar missing %q", want)

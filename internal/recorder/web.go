@@ -65,17 +65,17 @@ type pageData struct {
 
 // layoutData is what layout.html draws every page with. Page names the
 // template for the page's contents ("home", "recordings"), which gets Data.
+// Live is for the live card and player bar at the top of every page.
 type layoutData struct {
-	Page   string
-	Title  string // for <title>; empty for the home page
-	Player playerView
-	Data   any
+	Page  string
+	Title string // for <title>; empty for the home page
+	Live  pageData
+	Data  any
 }
 
-// playerView is the player bar: the show on the air, or being recorded, and
-// its current song.
+// playerView is the player bar, the compact form of the live card: the show
+// being recorded, or on the air, and its current song.
 type playerView struct {
-	OnAir       bool // a show is on the air (the bar shows even when not listening)
 	Recording   bool
 	Title       string
 	DJ          string
@@ -120,10 +120,10 @@ func (a *App) Handler() http.Handler {
 		// The full list opens via the "Add shows" button (?add=1), and on its own
 		// when nothing is selected yet, since there's nothing else to show.
 		data.Browse = r.URL.Query().Get("add") == "1" || data.Selected == 0
-		render(w, tmpl, "layout", layoutData{Page: "home", Player: data.Player, Data: data})
+		render(w, tmpl, "layout", layoutData{Page: "home", Live: data, Data: data})
 	})
 	mux.HandleFunc("GET /recordings", func(w http.ResponseWriter, r *http.Request) {
-		data, err := a.pageData(r.Context()) // for the player bar
+		data, err := a.pageData(r.Context()) // for the live card
 		if err != nil {
 			httpError(w, err)
 			return
@@ -146,7 +146,7 @@ func (a *App) Handler() http.Handler {
 			active[rec.Airing] = false
 			page.Recordings = append(page.Recordings, recordingView{Recording: rec, InProgress: inProgress})
 		}
-		render(w, tmpl, "layout", layoutData{Page: "recordings", Title: "Recordings", Player: data.Player, Data: page})
+		render(w, tmpl, "layout", layoutData{Page: "recordings", Title: "Recordings", Live: data, Data: page})
 	})
 	// liveJSON renders the parts of the page that change on their own.
 	liveJSON := func(ctx context.Context) ([]byte, error) {
@@ -462,14 +462,13 @@ func (d pageData) player() playerView {
 		if st.Finishing || st.Stopped {
 			continue
 		}
-		v.OnAir, v.Recording, v.Title, v.DJ, v.Image = true, true, st.Title, st.DJ, st.Image
+		v.Recording, v.Title, v.DJ, v.Image = true, st.Title, st.DJ, st.Image
 		if st.Current != nil {
 			v.Song, v.Artist = st.Current.Title, st.Current.Artist
 		}
 		return v
 	}
 	if o := d.OnAir; o != nil {
-		v.OnAir = !o.Start.IsZero() // a show from the schedule, not just the station
 		v.Title, v.DJ, v.Image, v.Song, v.Artist = o.Title, o.DJ, o.Image, o.Song, o.Artist
 	}
 	return v

@@ -309,20 +309,19 @@ func TestWebEvents(t *testing.T) {
 	}
 }
 
-// Every page has the navigation and the player bar around its contents; the
-// bar is hidden when no show is on the air, and the page script shows it
-// while listening.
+// Every page has the navigation, the live card and the player bar (which the
+// page script shows once the card is scrolled away) around its contents.
 func TestWebLayout(t *testing.T) {
 	app, srv := testApp(t)
 	home := get(t, srv.URL+"/")
-	for _, want := range []string{`<main id="page" data-page="home"`, `<a href="/" aria-current="page">Home</a>`, `<div id="player" hidden>`, `data-active="false"`, "<title>WCBN Recorder</title>"} {
+	for _, want := range []string{`<main id="page" data-page="home"`, `<a href="/" aria-current="page">Home</a>`, `<div id="live" aria-live="polite">`, `<div id="player">`, "<title>WCBN Recorder</title>"} {
 		if !strings.Contains(home, want) {
 			t.Errorf("home page missing %q", want)
 		}
 	}
 
 	page := get(t, srv.URL+"/recordings")
-	for _, want := range []string{`<main id="page" data-page="recordings"`, `<a href="/recordings" aria-current="page">Recordings</a>`, `<div id="player" hidden>`,
+	for _, want := range []string{`<main id="page" data-page="recordings"`, `<a href="/recordings" aria-current="page">Recordings</a>`, `class="card live-card onair"`, `class="listen"`,
 		"<title>Recordings · WCBN Recorder</title>", "Nothing has been recorded yet"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("recordings page missing %q", want)

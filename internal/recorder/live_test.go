@@ -91,10 +91,13 @@ func TestWebLive(t *testing.T) {
 	app.mu.Unlock()
 
 	page := get(t, srv.URL+"/")
-	for _, want := range []string{`<section class="card live-card"`, "REC", "Now playing", "Pressure Drop", "Toots &amp; the Maytals", "Songs recorded so far (1)", `class="stop-form"`, "End recording", " · 320 kbps · stops at "} {
+	for _, want := range []string{`<section class="card live-card"`, "REC", "Now playing", "Pressure Drop", "Toots &amp; the Maytals", `class="stop-form"`, "End recording", " · 320 kbps · stops at "} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page missing %q", want)
 		}
+	}
+	if strings.Contains(page, `class="songs"`) || strings.Contains(page, `<span class="meta">Started`) {
+		t.Error("the live card shouldn't list the songs recorded so far, or how long the current one has played")
 	}
 
 	var out struct {

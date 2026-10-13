@@ -116,13 +116,6 @@
   .now-playing .song { font-size: 22px; font-weight: 650; line-height: 1.25; }
   .now-playing .artist { font-size: 16px; }
   .now-playing .meta { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
-  details.songs { margin-top: 14px; font-size: 14px; }
-  details.songs summary { cursor: pointer; color: var(--muted); }
-  details.songs ol { list-style: none; margin: 8px 0 0; padding: 0; border-top: 1px solid var(--line); }
-  details.songs li { display: grid; grid-template-columns: 2.5em 5.5em 1fr auto; gap: 10px; padding: 6px 2px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
-  details.songs li .n, details.songs li .at, details.songs li .len { color: var(--muted); }
-  details.songs li.current { font-weight: 600; }
-  details.songs .saved { color: #3a9d5d; }
   button.listen { font-weight: 600; padding: 5px 14px; border-color: var(--rec); color: var(--rec); }
   button.listen[aria-pressed=true] { background: var(--rec); color: #fff; }
   button.listen:focus-visible { outline: 2px solid var(--rec); outline-offset: 2px; }
@@ -130,7 +123,6 @@
   .live-card.onair { border-color: var(--line); box-shadow: none; }
   .live-card.onair .progress div { background: var(--muted); }
   button.record-now { font-weight: 600; padding: 5px 14px; background: var(--accent); border-color: var(--accent); color: #fff; }
-  details.songs li.current .len::after { content: " ●"; color: var(--rec); }
   /* Site navigation */
   .site-nav { max-width: 1100px; margin: 0 auto; padding: 20px 20px 0; display: flex; gap: 20px; align-items: baseline; flex-wrap: wrap; }
   .site-nav .brand { font-size: 22px; font-weight: 700; text-decoration: none; margin-right: 8px; }
@@ -141,11 +133,19 @@
   main:focus { outline: none; }
   .home-head { justify-content: flex-end; }
 
-  /* Player bar: pinned to the top of the window once the page scrolls. */
-  #player { position: sticky; top: 0; z-index: 10; margin-top: 12px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-block: 1px solid var(--line); }
+  /* The live card, on every page, and the player bar it becomes once it's
+     scrolled out of view: pinned to the top of the window. The bar is fixed,
+     not sticky, so the page doesn't shift as it appears. */
+  .live-wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+  html { scroll-padding-top: 72px; } /* links to a spot on the page land below the bar */
+  #player { position: fixed; top: 0; left: 0; right: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); box-shadow: 0 2px 12px rgb(0 0 0 / .08); transform: translateY(-100%); visibility: hidden; transition: transform .2s ease, visibility .2s; }
+  #player.shown { transform: none; visibility: visible; }
+  @media (prefers-reduced-motion: reduce) { #player { transition: none; } }
+  .player-bar .show-link { all: unset; cursor: pointer; display: block; flex: 1; min-width: 0; line-height: 1.3; }
+  .player-bar .show-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
   .player-bar { max-width: 1100px; margin: 0 auto; padding: 8px 20px; display: flex; gap: 12px; align-items: center; }
   .player-text { flex: 1; min-width: 0; line-height: 1.3; }
-  .player-show, .player-song { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .player-show, .player-song { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .player-show { font-size: 14px; }
   .player-show .badge { margin-right: 4px; }
   .player-song { font-size: 13px; }
@@ -189,7 +189,8 @@
   <a href="/"{{if eq .Page "home"}} aria-current="page"{{end}}>Home</a>
   <a href="/recordings"{{if eq .Page "recordings"}} aria-current="page"{{end}}>Recordings</a>
 </nav>
-<div id="player"{{if not .Player.OnAir}} hidden{{end}}>{{template "player" .Player}}</div>
+<div class="live-wrap"><div id="live" aria-live="polite">{{template "live" .Live}}</div></div>
+<div id="player">{{template "player" .Live.Player}}</div>
 <main id="page" data-page="{{.Page}}" tabindex="-1">
 {{if eq .Page "home"}}{{template "home" .Data}}{{else if eq .Page "recordings"}}{{template "recordings" .Data}}{{end}}
 </main>
@@ -246,22 +247,27 @@
     morphChildren(from, to);
   }
 
-  // The player: one audio element for the visit, and the bar pinned to the
-  // top of the window. The bar shows whenever a show is on the air (or being
-  // recorded), and while listening. Stopping disconnects rather than pausing,
-  // so the next Listen picks up at the live edge. ?listen=1 in the URL
-  // records that it's playing, so reloading the page resumes it.
+  // The player: one audio element for the visit, played from the live card
+  // at the top of every page, or from the bar it turns into once it's
+  // scrolled out of view. Every Listen button (the card's, or the cards' when
+  // recordings overlap, and the bar's) shows the same state. Stopping
+  // disconnects rather than pausing, so the next Listen picks up at the live
+  // edge. ?listen=1 in the URL records that it's playing, so reloading the
+  // page resumes it.
   const player = new Audio();
   player.preload = "none";
   let listening = false, listenState = "";
-  const playerBox = document.getElementById("player");
+  const live = document.getElementById("live"), playerBox = document.getElementById("player");
   function syncPlayer() {
-    playerBox.hidden = playerBox.querySelector(".player-bar")?.dataset.active !== "true" && !listening;
-    const b = playerBox.querySelector("button.listen");
-    if (!b) return;
-    b.setAttribute("aria-pressed", listening);
-    b.textContent = !listening ? "▶ Listen" : listenState === "playing" ? "■ Stop listening" : "… Connecting";
+    document.querySelectorAll("#live button.listen, #player button.listen").forEach(b => {
+      b.setAttribute("aria-pressed", listening);
+      b.textContent = !listening ? "▶ Listen" : listenState === "playing" ? "■ Stop listening" : "… Connecting";
+    });
   }
+  // The bar slides in once the card has gone up under where the bar sits.
+  new IntersectionObserver(([e]) => {
+    playerBox.classList.toggle("shown", !e.isIntersecting && e.boundingClientRect.top < 0);
+  }, { rootMargin: "-56px 0px 0px 0px" }).observe(live);
   function setListenParam(on) {
     const url = new URL(location);
     if (on) url.searchParams.set("listen", "1"); else url.searchParams.delete("listen");
@@ -291,9 +297,12 @@
   player.addEventListener("waiting", () => { listenState = "connecting"; syncPlayer(); });
   player.addEventListener("ended", stopListening);
   player.addEventListener("error", () => { if (listening) stopListening(); });
-  playerBox.addEventListener("click", e => {
-    if (!e.target.closest("button.listen")) return;
-    if (listening) stopListening(); else startListening();
+  document.addEventListener("click", e => {
+    if (e.target.closest("#live button.listen, #player button.listen")) {
+      if (listening) stopListening(); else startListening();
+    } else if (e.target.closest("#player .show-link")) {
+      scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    }
   });
 
   // Navigation within the app: same-site links fetch the page and swap in
@@ -379,9 +388,7 @@
       if (!res.ok) throw new Error(res.statusText);
       const data = await res.json();
       setRowState(data.id, data.record);
-      morph(document.getElementById("mine"), data.mine);
-      morph(document.getElementById("upcoming"), data.upcoming);
-      document.getElementById("selected-count").textContent = `(${data.selected})`;
+      page.selectionChanged?.(data); // the live card's Record button works on every page
       if (data.record && form.closest("#browse")) {
         // Added from the show list: back to Your shows, with the new row highlighted.
         page.setBrowse?.(false);
@@ -434,13 +441,14 @@
     }
   });
 
-  // Keep the page current from the server's event stream. The player bar is
-  // updated on every page; the rest is up to the page showing. The stream is
+  // Keep the page current from the server's event stream. The live card and
+  // player bar are updated on every page; the rest is up to the page showing. The stream is
   // closed while the tab is hidden; on reconnecting, the server sends the
   // current state straight away.
   function update(data) {
+    morph(live, data.live);
     morph(playerBox, data.player);
-    syncPlayer(); // same task as the morph, so its labels never show
+    syncPlayer(); // same task as the morphs, so their labels never show
     page.update?.(data);
   }
   let events = null;
@@ -552,9 +560,13 @@
       if (params.has("sort")) saved = { col: Number(params.get("sort")), dir: params.get("dir") === "desc" ? "desc" : "asc" };
       if (saved && headers[saved.col]?.querySelector("button.sort")) sortBy(saved.col, saved.dir);
     },
-    // Refreshes keep the song lists that are open.
+    // Record/Remove changed what's selected.
+    selectionChanged(data) {
+      morph(document.getElementById("mine"), data.mine);
+      morph(document.getElementById("upcoming"), data.upcoming);
+      document.getElementById("selected-count").textContent = `(${data.selected})`;
+    },
     update(data) {
-      morph(document.getElementById("live"), data.live);
       morph(document.getElementById("upcoming"), data.upcoming);
       morph(document.getElementById("mine"), data.mine);
       document.getElementById("updated").textContent = data.updated;
@@ -576,13 +588,15 @@
 </html>
 {{end}}
 
+{{/* The compact form of the live card, pinned to the top once the card is
+   scrolled away. Clicking the show scrolls back up to the card. */}}
 {{define "player"}}
-<div class="player-bar" data-active="{{.OnAir}}">
+<div class="player-bar">
   {{template "art" (art .Image .StationLogo "art-sm" false)}}
-  <div class="player-text">
-    <div class="player-show">{{if .Recording}}<span class="badge rec"><span class="dot"></span>REC</span>{{end}}<strong>{{.Title}}</strong>{{with .DJ}} <span class="muted">with {{.}}</span>{{end}}</div>
-    <div class="player-song muted">{{if .Song}}{{.Song}}{{with .Artist}} — {{.}}{{end}}{{else}}Live stream{{end}}</div>
-  </div>
+  <button type="button" class="show-link player-text" title="Back to the top">
+    <span class="player-show">{{if .Recording}}<span class="badge rec"><span class="dot"></span>REC</span>{{end}}<strong>{{.Title}}</strong>{{with .DJ}} <span class="muted">with {{.}}</span>{{end}}</span>
+    <span class="player-song muted">{{if .Song}}{{.Song}}{{with .Artist}} — {{.}}{{end}}{{else}}Live stream{{end}}</span>
+  </button>
   <button type="button" class="listen" aria-pressed="false" aria-label="Listen to WCBN live">▶ Listen</button>
 </div>
 {{end}}
