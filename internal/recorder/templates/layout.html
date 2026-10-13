@@ -97,14 +97,16 @@
   .live-head .slot { margin-left: auto; font-variant-numeric: tabular-nums; }
   /* Now playing, with the card's buttons at the bottom right. The buttons
      wrap onto the next line together, not one at a time. */
-  .live-foot { display: flex; align-items: flex-start; gap: 12px 16px; flex-wrap: wrap; margin-top: 16px; }
-  .live-foot .now-playing { flex: 1 1 260px; min-width: 0; margin-top: 0; }
+  /* Now playing and the play button share the row at any width: the song
+     and artist wrap, rather than the button dropping below them. */
+  .live-foot { display: flex; align-items: flex-start; gap: 16px; margin-top: 16px; }
+  .live-foot .now-playing { flex: 1; min-width: 0; margin-top: 0; overflow-wrap: anywhere; }
   /* The Listen circle is as tall as Now playing, from the label to the
      artist: --now-playing-height, the sum of its line heights below. A fixed
      size, not stretched to fit, which browsers don't agree on for a circle.
      Other buttons sit at the bottom beside it. */
   .live-card { --now-playing-height: calc(16px + 28px + 23px + 2 * 2px); }
-  .live-actions { display: flex; gap: 12px; align-items: flex-end; flex-wrap: nowrap; margin-left: auto; }
+  .live-actions { display: flex; flex: none; gap: 12px; align-items: flex-end; flex-wrap: nowrap; margin-left: auto; }
   .live-actions button.listen { width: var(--now-playing-height); height: var(--now-playing-height); }
   .badge { font-size: 11px; font-weight: 700; letter-spacing: .06em; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; align-self: center; }
   .badge.rec { color: var(--rec); }
