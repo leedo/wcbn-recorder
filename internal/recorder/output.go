@@ -169,8 +169,11 @@ func (r *recording) writeShowFile(meta showMeta, part, path string) error {
 	if err := writeTagged(path, &tag, src); err != nil {
 		return err
 	}
+	r.showOut = path
 	if err := r.writeCue(meta, path, segs); err != nil {
 		log.Printf("writing CUE sheet for %q: %v", meta.Title, err) // the show file itself is fine
+	} else if exists(cuePath(path)) {
+		r.cueOut = cuePath(path)
 	}
 	return nil
 }

@@ -81,9 +81,16 @@ func TestWebOnAir(t *testing.T) {
 
 	page := get(t, srv.URL+"/")
 	for _, want := range []string{`class="card live-card onair"`, "ON AIR", `<h2><a href="https://spinitron.com/WCBN/show/1/x" target="_blank" rel="noopener">Train To Skaville</a></h2>`, "with brian tomsic",
-		"West Coast Blues", "Blind Blake", `data-src="/listen"`, "+ Record this show", `name="from" value="onair"`, "Not recording · 320 kbps"} {
+		"West Coast Blues", "Blind Blake", "+ Record this show", `name="from" value="onair"`, "Not recording · 320 kbps"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("On air card missing %q", want)
+		}
+	}
+	// The player bar shows the show and song, and stays up while it's on.
+	for _, want := range []string{`<div id="player">`, `data-active="true"`, `<strong>Train To Skaville</strong> <span class="muted">with brian tomsic</span>`,
+		"West Coast Blues — Blind Blake", `class="listen"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("player bar missing %q", want)
 		}
 	}
 

@@ -25,7 +25,7 @@ cmd/wcbn-recorder/    the command: flags and startup
 internal/config/      config file loading
 internal/httpx/       HTTP client that fills in missing TLS intermediates
 internal/spinitron/   Spinitron calendar and show pages
-internal/store/       SQLite: show details and selections
+internal/store/       SQLite: show details, selections, and recorded shows and songs
 internal/mpeg/        MP3 frames and gapless Info frames
 internal/id3/         ID3v2.4 tag writer
 internal/recorder/    scheduler, recording, song files, web UI (templates/)
@@ -33,7 +33,14 @@ internal/recorder/    scheduler, recording, song files, web UI (templates/)
 
 ## Web UI
 
-The main page shows what you're recording: the live panel (while a show is on
+The UI has two pages, **Home** and **Recordings**, with the player bar (see
+Listening below) across the top of both. Moving between them doesn't reload the
+page: the page's script fetches the next page and swaps it in, so the player
+keeps playing. Every page is still an ordinary URL that works on its own.
+**Recordings** lists everything recorded, newest first, with its length, size,
+song count and folder (see Recordings database below).
+
+The home page shows what you're recording: the live panel (while a show is on
 the air), the selected shows coming up in the next week, and **Your shows**, the
 list of selected shows with their next airing and a **Remove** button.
 
@@ -56,8 +63,7 @@ current program from the schedule, with its artwork, DJ, time slot and progress,
 and the song playing now and the stream's bitrate (read from the station's
 Icecast status page, at most every 10 seconds). **+ Record this show** selects the program and starts
 recording it immediately (it reads **● Record now** if the show is already
-selected, for example after ending a recording). **▶ Listen** plays the station
-(see Listening below).
+selected, for example after ending a recording).
 
 While a show is recording, a live panel sits at the top of the page. It shows:
 
@@ -73,10 +79,16 @@ While a show is recording, a live panel sits at the top of the page. It shows:
 
 ### Listening
 
-**▶ Listen**, on either panel, plays the station through the recorder at
+The player bar sits under the navigation and stays pinned to the top of the
+window as the page scrolls. It's shown whenever a show is on the air (from the
+schedule) or being recorded, and while you're listening, with the show's
+artwork, title and DJ, the current song, and a REC badge while recording.
+Its **▶ Listen** button plays the station through the recorder at
 `/listen`. It's one continuous stream, whatever is or isn't being recorded, so
 it keeps playing when a recording starts or ends and when the station moves on
-to the next show. **■ Stop listening** disconnects. Because it goes through the
+to the next show. **■ Stop listening** disconnects. While it's playing, the
+URL has `?listen=1`, so reloading the page starts it again, if the browser
+lets audio start on its own (otherwise press Listen). Because it goes through the
 recorder, it works over an SSH tunnel like the rest of the UI, and isn't
 affected by the station's incomplete certificate chain.
 
@@ -99,7 +111,7 @@ folder (see Resuming below).
 
 The server pushes updates to the page (server-sent events, at `/events`) while
 it's visible: right away when a recording starts or ends, a show is selected,
-or the schedule is refreshed, and every couple of seconds while recording. An
+or the schedule is refreshed, and every second while recording. An
 expanded song list stays open across updates.
 
 Show details come from Spinitron. The calendar is re-read every
@@ -168,6 +180,26 @@ the recorder tells a resume from another airing of the same show that day.
 Another airing gets its own folder, with the start time added
 (`<show> - YYYY-MM-DD 0300`).
 
+### Recordings database
+
+Each recording is also listed in the database, so past recordings and their
+songs can be looked up without reading the folders. The `recordings` table has
+a row per recording, with the show's details, the airing's time slot, when
+recording started and finished, its size and length, and its files: the
+folder, whole-show file, CUE sheet, playlist and cover. The `songs` table has
+a row per song: track number, title, artist, the raw stream title, when it was
+announced, where it starts in the whole-show file and how long it is, and its
+song file. Songs are listed with `track_files` off too, as the whole-show
+file's chapters, with no song file.
+
+Paths are relative to `destination`, with forward slashes, so the recordings
+folder can be moved. A row is added when recording starts, each song as it's
+saved, and the files and length once the show is written; a recording that
+gets no audio is removed again. A resumed airing gets a second row, with the
+same airing key, for the whole-show file and songs it adds. Removing a show
+from the list keeps its recordings. Recordings made with `-test` aren't
+listed, and a database error is logged without stopping the recording.
+
 The machine has to stay awake: nothing is recorded while it sleeps, and the
 recorder reconnects when it wakes. On a laptop, keep it plugged in with sleep
 disabled, or run it on an always-on machine (see systemd below).
@@ -207,7 +239,7 @@ to `no`. Then make sure the `wcbn-recorder` user can write there.
 | `track_files` | `true` | write each song as its own MP3, plus a playlist |
 | `gapless` | `true` | make song files play back seamlessly (see Songs) |
 | `listen` | `127.0.0.1:8080` | address of the web UI |
-| `database` | `wcbn-recorder.db` | SQLite file for show details and selections; relative to the working directory |
+| `database` | `wcbn-recorder.db` | SQLite file for show details, selections and the list of recordings; relative to the working directory |
 | `programs` | none | optional show titles to select; imported into the database once, on first start |
 | `stream_url` | `https://floyd.wcbn.org:8443/wcbn-hd.mp3` | |
 | `schedule_url` | `https://spinitron.com/WCBN/calendar` | Spinitron HTML calendar |

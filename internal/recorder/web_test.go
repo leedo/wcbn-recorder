@@ -16,6 +16,7 @@ import (
 
 	"wcbn-recorder/internal/config"
 	"wcbn-recorder/internal/spinitron"
+	"wcbn-recorder/internal/store"
 )
 
 func testApp(t *testing.T) (*App, *httptest.Server) {
@@ -305,5 +306,51 @@ func TestWebEvents(t *testing.T) {
 	close(app.done)
 	if _, ok := next(); ok {
 		t.Error("stream still open after shutdown")
+	}
+}
+
+// Every page has the navigation and the player bar around its contents; the
+// bar is hidden when no show is on the air, and the page script shows it
+// while listening.
+func TestWebLayout(t *testing.T) {
+	app, srv := testApp(t)
+	home := get(t, srv.URL+"/")
+	for _, want := range []string{`<main id="page" data-page="home"`, `<a href="/" aria-current="page">Home</a>`, `<div id="player" hidden>`, `data-active="false"`, "<title>WCBN Recorder</title>"} {
+		if !strings.Contains(home, want) {
+			t.Errorf("home page missing %q", want)
+		}
+	}
+
+	page := get(t, srv.URL+"/recordings")
+	for _, want := range []string{`<main id="page" data-page="recordings"`, `<a href="/recordings" aria-current="page">Recordings</a>`, `<div id="player" hidden>`,
+		"<title>Recordings · WCBN Recorder</title>", "Nothing has been recorded yet"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("recordings page missing %q", want)
+		}
+	}
+
+	// The recordings page lists the database's recordings, newest first.
+	ctx := t.Context()
+	start := time.Date(2026, 10, 6, 19, 0, 0, 0, app.cfg.Location)
+	for i, title := range []string{"Train To Skaville", "Yazoo City Calling"} {
+		at := start.Add(time.Duration(i) * 24 * time.Hour)
+		id, err := app.store.AddRecording(ctx, store.Recording{Airing: title, Title: title, Start: at, End: at.Add(time.Hour), StartedAt: at, Dir: title + "/" + title + " - 2026-10-0" + fmt.Sprint(6+i)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			app.store.UpdateRecording(ctx, store.Recording{ID: id, DJ: "brian tomsic", FinishedAt: at.Add(time.Hour), DurationMs: 3_600_000, Bytes: 144_000_000})
+			app.store.AddSong(ctx, store.Song{RecordingID: id, Number: 1, Title: "Pressure Drop", PlayedAt: at})
+		}
+	}
+	page = get(t, srv.URL+"/recordings")
+	skaville, yazoo := strings.Index(page, "<strong>Train To Skaville</strong>"), strings.Index(page, "<strong>Yazoo City Calling</strong>")
+	if skaville < 0 || yazoo < 0 || yazoo > skaville {
+		t.Errorf("recordings out of order or missing:\n%s", page)
+	}
+	for _, want := range []string{`Recordings <span class="muted">(2)</span>`, "with brian tomsic", "1:00:00 · 144.0 MB · 1 song", "unfinished", "Train To Skaville/Train To Skaville - 2026-10-06"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("recordings page missing %q", want)
+		}
 	}
 }

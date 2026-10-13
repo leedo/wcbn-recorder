@@ -162,7 +162,7 @@ func TestStopRecording(t *testing.T) {
 	cfg.Destination, cfg.StreamURL = t.TempDir(), station.URL
 	now := time.Now()
 	job := Job{Program: "Club H", Event: spinitron.Event{Title: "Club H", Start: now, End: now.Add(time.Hour)}, Until: now.Add(time.Hour)}
-	rec, err := startRecording(cfg, job)
+	rec, err := startRecording(cfg, nil, job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestStopRecording(t *testing.T) {
 	}
 
 	// Ending a recording before Run has started stops it as soon as it does.
-	rec2, _ := startRecording(cfg, Job{Program: "Club H", Event: spinitron.Event{Title: "Club H 2", Start: now, End: now.Add(time.Hour)}, Until: now.Add(time.Hour)})
+	rec2, _ := startRecording(cfg, nil, Job{Program: "Club H", Event: spinitron.Event{Title: "Club H 2", Start: now, End: now.Add(time.Hour)}, Until: now.Add(time.Hour)})
 	rec2.Stop()
 	go func() { done <- rec2.Run(t.Context()) }()
 	select {

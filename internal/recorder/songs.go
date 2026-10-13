@@ -103,8 +103,10 @@ func (r *recording) songWriter(ctx context.Context) {
 		if err != nil {
 			r.songErrors++
 			log.Printf("writing song %d of %q: %v", seg.n, meta.Title, err)
+			r.catalogSong(ctx, seg, "") // still in the show file
 			continue
 		}
+		r.catalogSong(ctx, seg, filepath.Join(r.out.trackDir, entry[1]))
 		playlist = append(playlist, entry...)
 		if err := r.writePlaylist(meta, playlist); err != nil {
 			log.Printf("writing playlist for %q: %v", meta.Title, err)

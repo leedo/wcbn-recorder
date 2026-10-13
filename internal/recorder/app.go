@@ -152,7 +152,7 @@ func (a *App) startDue(ctx context.Context, now time.Time) time.Duration {
 			continue
 		}
 		a.started[key] = true
-		rec, err := startRecording(a.cfg, job)
+		rec, err := startRecording(a.cfg, a.store, job)
 		if err != nil {
 			log.Printf("recording %q failed: %v", job.Event.Title, err)
 			continue

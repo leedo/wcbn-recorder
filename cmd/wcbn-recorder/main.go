@@ -45,7 +45,7 @@ func main() {
 			Event:   spinitron.Event{Title: "Test Recording", Start: now, End: now.Add(*test)},
 			Until:   now.Add(*test),
 		}
-		if err := recorder.Record(ctx, cfg, job); err != nil {
+		if err := recorder.Record(ctx, cfg, nil, job); err != nil {
 			log.Fatal(err)
 		}
 		return

@@ -23,6 +23,7 @@ import (
 	"wcbn-recorder/internal/httpx"
 	"wcbn-recorder/internal/mpeg"
 	"wcbn-recorder/internal/spinitron"
+	"wcbn-recorder/internal/store"
 )
 
 const (
@@ -50,13 +51,15 @@ type trackMark struct {
 var recordingIDs atomic.Int64
 
 type recording struct {
-	id      int64
-	cfg     *config.Config
-	job     Job
-	out     outputs
-	part    string
-	file    *os.File
-	started time.Time
+	id        int64
+	cfg       *config.Config
+	db        *store.Store // lists the recording and its songs; nil for none
+	catalogID int64        // the recording's row in db, once added
+	job       Job
+	out       outputs
+	part      string
+	file      *os.File
+	started   time.Time
 
 	// mu guards the fields below, which the web UI reads while recording.
 	mu         sync.Mutex
@@ -85,12 +88,15 @@ type recording struct {
 	info      spinitron.ShowInfo // from the show's Spinitron page, fetched once
 	art       *artwork           // the show's image, if any; fetched with info
 	coverOnce sync.Once
+
+	showOut, cueOut string // the show file and CUE sheet written, if any
 }
 
 // Record streams the live program to disk until job.Until (or ctx is
-// cancelled), then writes the tagged show file and/or one file per song.
-func Record(ctx context.Context, cfg *config.Config, job Job) error {
-	rec, err := startRecording(cfg, job)
+// cancelled), then writes the tagged show file and/or one file per song. It
+// lists the recording in db, if that isn't nil.
+func Record(ctx context.Context, cfg *config.Config, db *store.Store, job Job) error {
+	rec, err := startRecording(cfg, db, job)
 	if err != nil {
 		return err
 	}
@@ -99,7 +105,7 @@ func Record(ctx context.Context, cfg *config.Config, job Job) error {
 
 // startRecording picks the output names and creates the file the audio is
 // streamed into. Run does the recording.
-func startRecording(cfg *config.Config, job Job) (*recording, error) {
+func startRecording(cfg *config.Config, db *store.Store, job Job) (*recording, error) {
 	dir := filepath.Join(cfg.Destination, sanitize(job.Program))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
@@ -120,7 +126,7 @@ func startRecording(cfg *config.Config, job Job) (*recording, error) {
 	if err != nil {
 		return nil, err
 	}
-	rec := &recording{id: recordingIDs.Add(1), cfg: cfg, job: job, out: out, part: part, file: f, started: time.Now(), audio: mpeg.NewFrameWriter(f), resumed: resume}
+	rec := &recording{id: recordingIDs.Add(1), cfg: cfg, db: db, job: job, out: out, part: part, file: f, started: time.Now(), audio: mpeg.NewFrameWriter(f), resumed: resume}
 	if resume && cfg.TrackFiles {
 		// Carry on the song numbering and playlist of the earlier recording.
 		rec.songBase = lastSongNumber(out.trackDir)
@@ -147,6 +153,7 @@ func (r *recording) Run(ctx context.Context) error {
 	}
 	r.mu.Unlock()
 	go stopAtWallTime(recCtx, job.Until, cancel)
+	r.catalogStart(context.WithoutCancel(ctx))
 	r.startSongWriter(context.WithoutCancel(ctx))
 	backoff := time.Second
 	for recCtx.Err() == nil {
@@ -180,6 +187,7 @@ func (r *recording) Run(ctx context.Context) error {
 	}
 	if r.audio.Written() == 0 {
 		r.stopSongWriter()
+		r.catalogDiscard(context.WithoutCancel(ctx))
 		os.Remove(r.part)
 		if !r.resumed {
 			os.Remove(markerPath(out))
@@ -188,7 +196,8 @@ func (r *recording) Run(ctx context.Context) error {
 		return fmt.Errorf("no audio received for %q", job.Event.Title)
 	}
 	// Finalize even if we were interrupted by shutdown so partial shows keep their tags.
-	if err := r.finalize(context.WithoutCancel(ctx), r.part, out); err != nil {
+	ctx = context.WithoutCancel(ctx)
+	if err := r.finalize(ctx, r.part, out); err != nil {
 		keep := uniquePath(out.showFile, ".mp3")
 		log.Printf("writing output failed (%v); keeping untagged audio as %s", err, keep)
 		if err := os.MkdirAll(filepath.Dir(keep), 0o755); err != nil {
@@ -197,7 +206,9 @@ func (r *recording) Run(ctx context.Context) error {
 		if err := os.Rename(r.part, keep); err != nil {
 			return err
 		}
+		r.showOut = keep
 	}
+	r.catalogFinish(ctx, r.showMetadata(ctx), r.showOut, r.cueOut)
 	log.Printf("finished %q: %s (%.1f MB, %d tracks)", job.Event.Title, out.trackDir, float64(r.audio.Written())/1e6, len(r.tracks))
 	return nil
 }

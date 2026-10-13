@@ -1,0 +1,15 @@
+{{/* The recordings page: everything recorded, newest first. */}}
+{{define "recordings"}}
+<header class="page-head"><h1>Recordings{{with .Recordings}} <span class="muted">({{len .}})</span>{{end}}</h1></header>
+{{if .Recordings}}<div class="card"><ul class="list rec-list">
+  {{range .Recordings}}<li data-key="rec-{{.ID}}">
+    <span class="time">{{when .Start}}</span>
+    <div class="show">
+      <strong>{{.Title}}</strong>{{with .DJ}} <span class="muted">with {{.}}</span>{{end}}
+      {{if .InProgress}} <span class="tag rec">● recording</span>{{else if .FinishedAt.IsZero}} <span class="tag" title="The recorder stopped before writing this recording's files">unfinished</span>{{end}}
+      <div class="sub muted">{{.Dir}}</div>
+    </div>
+    <div class="info muted">{{if not .InProgress}}{{dur .DurationMs}} · {{mb .Bytes}} · {{end}}{{.Songs}} song{{if ne .Songs 1}}s{{end}}</div>
+  </li>{{end}}
+</ul></div>{{else}}<p class="empty muted">Nothing has been recorded yet. Recordings appear here as soon as they start.</p>{{end}}
+{{end}}

@@ -1,4 +1,5 @@
-// Package store keeps show details and recording selections in SQLite.
+// Package store keeps show details, recording selections, and the catalog of
+// recorded shows and songs in SQLite.
 package store
 
 import (
@@ -52,6 +53,7 @@ var migrations = []string{
 	// refresh, so existing databases get artwork right away.
 	`ALTER TABLE shows ADD COLUMN image TEXT NOT NULL DEFAULT '';
 	UPDATE shows SET details_at = 0;`,
+	recordingMigration, // see recordings.go
 }
 
 func Open(path string) (*Store, error) {
