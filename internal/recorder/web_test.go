@@ -60,8 +60,9 @@ func TestWebToggle(t *testing.T) {
 		t.Fatalf("unexpected page:\n%s", page)
 	}
 	// With nothing selected, the full list opens on its own.
-	if !strings.Contains(page, `<section id="browse" >`) || !strings.Contains(page, `aria-expanded="true"`) {
-		t.Error("full list should be open when nothing is selected")
+	if !strings.Contains(page, `<section id="browse" >`) || !strings.Contains(page, `aria-expanded="true"`) ||
+		!strings.Contains(page, `<div class="card" id="mine" hidden>`) || !strings.Contains(page, `<span id="shows-title">Add shows</span>`) {
+		t.Error("the show list should replace Your shows when nothing is selected")
 	}
 	if strings.Contains(page, "<script>alert(1)</script>") {
 		t.Error("show title was not escaped")
@@ -104,11 +105,15 @@ func TestWebToggle(t *testing.T) {
 	// until "Add shows" (?add=1) is used.
 	page = get(t, srv.URL+"/")
 	if !strings.Contains(page, `<li id="mine-`+id+`">`) || !strings.Contains(page, `<section id="browse" hidden>`) ||
-		!strings.Contains(page, `href="/?add=1"`) {
-		t.Error("main page should list the selection and hide the full list")
+		!strings.Contains(page, `<div class="card" id="mine">`) || !strings.Contains(page, `href="/?add=1"`) {
+		t.Error("main page should show Your shows and hide the show list")
 	}
-	if page := get(t, srv.URL+"/?add=1"); !strings.Contains(page, `<section id="browse" >`) || !strings.Contains(page, ">Done<") {
-		t.Error("?add=1 should open the full list")
+	page = get(t, srv.URL+"/?add=1")
+	if !strings.Contains(page, `<section id="browse" >`) || !strings.Contains(page, ">Cancel<") || !strings.Contains(page, `<div class="card" id="mine" hidden>`) {
+		t.Error("?add=1 should show the show list in place of Your shows")
+	}
+	if !strings.Contains(page, `class="toggle" disabled>✓ Added</button>`) {
+		t.Error("a show already in Your shows should be marked Added")
 	}
 	if sel, _ := app.store.Selected(context.Background()); len(sel) != 1 {
 		t.Errorf("selected = %d", len(sel))
@@ -117,7 +122,7 @@ func TestWebToggle(t *testing.T) {
 	// No-JS path: a plain form post redirects back to where it came from.
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	for _, tc := range []struct{ from, record, want string }{
-		{"add", "1", "/?add=1#show-" + id},
+		{"add", "1", "/#mine-" + id},
 		{"mine", "0", "/#your-shows"},
 	} {
 		resp, err = client.PostForm(srv.URL+"/shows/"+id+"/record", url.Values{"record": {tc.record}, "from": {tc.from}})

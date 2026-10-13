@@ -60,7 +60,7 @@
   .tag.rec { border-color: var(--rec); color: var(--rec); }
   button { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; white-space: nowrap; }
   button:hover { border-color: var(--muted); }
-  button.toggle[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.toggle:disabled { cursor: default; color: var(--muted); border-color: transparent; background: none; }
   button.link { border: 0; background: none; padding: 0; color: var(--muted); text-decoration: underline; font-size: 12px; }
   form { display: inline; margin: 0; }
   .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 32px 0 10px; }
@@ -164,16 +164,15 @@
 <div class="card" id="upcoming">{{template "upcoming" .}}</div>
 
 <div class="section-head" id="your-shows">
-  <h2>Your shows <span class="muted" id="selected-count">({{.Selected}})</span></h2>
+  <h2><span id="shows-title">{{if .Browse}}Add shows{{else}}Your shows{{end}}</span> <span class="muted" id="selected-count"{{if .Browse}} hidden{{end}}>({{.Selected}})</span></h2>
   <a class="button primary" id="add-toggle" href="{{if .Browse}}/{{else}}/?add=1{{end}}"
-     role="button" aria-controls="browse" aria-expanded="{{.Browse}}">{{if .Browse}}Done{{else}}+ Add shows{{end}}</a>
+     role="button" aria-controls="browse" aria-expanded="{{.Browse}}">{{if .Browse}}Cancel{{else}}+ Add shows{{end}}</a>
 </div>
-<div class="card" id="mine">{{template "mine" .}}</div>
+<div class="card" id="mine"{{if .Browse}} hidden{{end}}>{{template "mine" .}}</div>
 
 <section id="browse" {{if not .Browse}}hidden{{end}}>
-<h2>All shows <span class="muted">({{len .Shows}})</span></h2>
 <div class="controls">
-  <input type="search" id="q" placeholder="Search shows, DJs, descriptions…" autocomplete="off" aria-label="Search shows">
+  <input type="search" id="q" placeholder="Search {{len .Shows}} shows, DJs, descriptions…" autocomplete="off" aria-label="Search shows">
   <select id="category" aria-label="Category">
     <option value="">All categories</option>
     {{range .Categories}}<option value="{{lower .}}">{{.}}</option>{{end}}
@@ -182,7 +181,7 @@
 <div class="card">
 <table>
   <thead><tr>
-    <th aria-sort="none"><button type="button" class="sort" data-col="0" data-type="number" data-first="desc">Record</button></th>
+    <th aria-sort="none"><button type="button" class="sort" data-col="0" data-type="number" data-first="desc">Add</button></th>
     <th aria-sort="ascending"><button type="button" class="sort" data-col="1">Show</button></th>
     <th aria-sort="none"><button type="button" class="sort" data-col="2">DJ</button></th>
     <th aria-sort="none"><button type="button" class="sort" data-col="3">Category</button></th>
@@ -195,9 +194,9 @@
       data-search="{{lower .Title}} {{lower .DJ}} {{lower .Description}}" data-category="{{lower .Category}}">
     <td data-sort="{{if .Record}}1{{else}}0{{end}}">
       <form method="post" action="/shows/{{.ID}}/record" class="toggle-form" data-id="{{.ID}}">
-        <input type="hidden" name="record" value="{{if .Record}}0{{else}}1{{end}}">
+        <input type="hidden" name="record" value="1">
         <input type="hidden" name="from" value="add">
-        <button type="submit" class="toggle" aria-pressed="{{.Record}}">{{if .Record}}Recording{{else}}Record{{end}}</button>
+        <button type="submit" class="toggle"{{if .Record}} disabled{{end}}>{{if .Record}}✓ Added{{else}}+ Add{{end}}</button>
       </form>
     </td>
     <td class="title" data-sort="{{lower .Title}}">
@@ -282,9 +281,8 @@
     row.classList.toggle("selected", record);
     row.cells[0].dataset.sort = record ? "1" : "0";
     const button = row.querySelector(".toggle");
-    button.setAttribute("aria-pressed", record);
-    button.textContent = record ? "Recording" : "Record";
-    row.querySelector("input[name=record]").value = record ? "0" : "1";
+    button.disabled = record;
+    button.textContent = record ? "✓ Added" : "+ Add";
   }
   document.addEventListener("submit", async e => {
     const form = e.target.closest(".toggle-form");
@@ -300,6 +298,18 @@
       morph(document.getElementById("mine"), data.mine);
       morph(document.getElementById("upcoming"), data.upcoming);
       document.getElementById("selected-count").textContent = `(${data.selected})`;
+      if (data.record && form.closest("#browse")) {
+        // Added from the show list: back to Your shows, with the new row highlighted.
+        setBrowse(false);
+        const row = document.getElementById("mine-" + data.id);
+        if (row) {
+          // An animation, not a class: refreshes keep attributes in step with
+          // the server, and would drop a class straight away.
+          const from = getComputedStyle(document.documentElement).getPropertyValue("--accent-bg");
+          row.animate([{ background: from }, { background: "transparent" }], { duration: 2500, easing: "ease-out" });
+          row.scrollIntoView({ block: "nearest" });
+        }
+      }
       refreshLive(); // selecting a show that's on the air starts recording right away
     } catch (err) {
       alert("Couldn't update: " + err.message);
@@ -308,27 +318,34 @@
     }
   });
 
-  // "Add shows" opens the search bar and full list; "Done" closes it. The
-  // state is kept in the URL (?add=1) so a reload keeps it.
+  // "Add shows" swaps Your shows for the searchable list of every show, in the
+  // same place; adding a show or "Cancel" swaps back. The state is kept in the
+  // URL (?add=1), so a reload keeps it.
   const browse = document.getElementById("browse"), addToggle = document.getElementById("add-toggle");
+  const mineList = document.getElementById("mine"), showsHead = document.getElementById("your-shows");
   function setBrowse(open) {
     browse.hidden = !open;
+    mineList.hidden = open;
+    document.getElementById("shows-title").textContent = open ? "Add shows" : "Your shows";
+    document.getElementById("selected-count").hidden = open;
     addToggle.setAttribute("aria-expanded", open);
-    addToggle.textContent = open ? "Done" : "+ Add shows";
+    addToggle.textContent = open ? "Cancel" : "+ Add shows";
     addToggle.href = open ? "/" : "/?add=1";
     const url = new URL(location);
     if (open) url.searchParams.set("add", "1"); else url.searchParams.delete("add");
     url.hash = "";
     history.replaceState(null, "", url);
+    if (open) {
+      document.getElementById("q").focus({ preventScroll: true });
+    } else {
+      // The show list may have been scrolled far down; bring the heading back.
+      if (showsHead.getBoundingClientRect().top < 0) showsHead.scrollIntoView({ block: "start" });
+      addToggle.focus({ preventScroll: true });
+    }
   }
   addToggle.addEventListener("click", e => {
     e.preventDefault();
-    const open = browse.hidden;
-    setBrowse(open);
-    if (open) {
-      browse.scrollIntoView({ behavior: "smooth", block: "start" });
-      document.getElementById("q").focus({ preventScroll: true });
-    }
+    setBrowse(browse.hidden);
   });
 
   // Listening: one audio element for the page, outside the live panel so its

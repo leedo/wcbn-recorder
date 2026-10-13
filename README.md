@@ -37,11 +37,13 @@ The main page shows what you're recording: the live panel (while a show is on
 the air), the selected shows coming up in the next week, and **Your shows**, the
 list of selected shows with their next airing and a **Remove** button.
 
-**Add shows** opens the full list of every show on the calendar, with its DJ,
-category, weekly schedule, next airing and description. Search it, filter it by
-category, and click **Record** to select a show; **Done** closes it. The list
-opens on its own when nothing is selected yet, and `/?add=1` links straight to
-it. Click a column header to sort by it, and click again to reverse. "Schedule"
+**+ Add shows** swaps Your shows for the list of every show on the calendar, in
+the same place, with its DJ, category, weekly schedule, next airing and
+description. Search it or filter it by category, and click **+ Add** to add a
+show: you're taken back to Your shows, with the new show highlighted. Shows
+already in Your shows are marked **✓ Added**; remove them from Your shows.
+**Cancel** goes back without changes. The list opens on its own when nothing is
+selected yet, and `/?add=1` links straight to it. Click a column header to sort by it, and click again to reverse. "Schedule"
 sorts by weekly time slot, Monday first; "Next airing" sorts by date; "Record"
 puts selected shows first. The sort is remembered, and links can set it with
 `?sort=<column number>&dir=asc|desc` (columns count from 0).

@@ -161,7 +161,7 @@ func (a *App) Handler() http.Handler {
 			target := "/#your-shows"
 			switch r.FormValue("from") {
 			case "add":
-				target = fmt.Sprintf("/?add=1#show-%d", id)
+				target = fmt.Sprintf("/#mine-%d", id) // back to Your shows, at the new row
 			case "onair":
 				target = "/"
 			}
