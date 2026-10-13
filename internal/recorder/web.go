@@ -378,12 +378,8 @@ func (a *App) Handler() http.Handler {
 		}
 		a.notify()
 		if !wantsJSON(r) {
-			// Without JS, go back to where the button was pressed.
-			target := fmt.Sprintf("/shows#show-%d", id) // back to the show in the list
-			if r.FormValue("from") == "onair" {
-				target = "/"
-			}
-			http.Redirect(w, r, target, http.StatusSeeOther)
+			// Without JS, go back to the show in the list.
+			http.Redirect(w, r, fmt.Sprintf("/shows#show-%d", id), http.StatusSeeOther)
 			return
 		}
 		// Send back the re-rendered upcoming list so the page can update in place.

@@ -129,20 +129,19 @@ func TestWebToggle(t *testing.T) {
 		t.Errorf("selected = %d", len(sel))
 	}
 
-	// No-JS path: a plain form post redirects back to where it came from.
+	// No-JS path: a plain form post redirects back to the show in the list.
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	for _, tc := range []struct{ from, record, want string }{
-		{"onair", "1", "/"},
-		{"shows", "1", "/shows#show-" + id},
-		{"shows", "0", "/shows#show-" + id},
+	for _, tc := range []struct{ record, want string }{
+		{"1", "/shows#show-" + id},
+		{"0", "/shows#show-" + id},
 	} {
-		resp, err = client.PostForm(srv.URL+"/shows/"+id+"/record", url.Values{"record": {tc.record}, "from": {tc.from}})
+		resp, err = client.PostForm(srv.URL+"/shows/"+id+"/record", url.Values{"record": {tc.record}})
 		if err != nil {
 			t.Fatal(err)
 		}
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != tc.want {
-			t.Errorf("form post from %s: %s %s", tc.from, resp.Status, resp.Header.Get("Location"))
+			t.Errorf("form post record=%s: %s %s", tc.record, resp.Status, resp.Header.Get("Location"))
 		}
 	}
 	if sel, _ := app.store.Selected(context.Background()); len(sel) != 0 {

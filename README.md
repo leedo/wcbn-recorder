@@ -71,9 +71,8 @@ that is being recorded lets that recording finish.
 When nothing is recording, the live panel shows what's **on air**: the
 current program from the schedule, with its artwork, DJ, time slot and progress,
 and the song playing now and the stream's bitrate (read from the station's
-Icecast status page, at most every 10 seconds). **+ Record this show** selects the program and starts
-recording it immediately (it reads **● Record now** if the show is already
-selected, for example after ending a recording).
+Icecast status page, at most every 10 seconds). Adding the show that's on the
+air on the Shows page starts recording it immediately.
 
 While a show is recording, the live panel shows the recording instead:
 

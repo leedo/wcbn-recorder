@@ -81,10 +81,13 @@ func TestWebOnAir(t *testing.T) {
 
 	page := get(t, srv.URL+"/")
 	for _, want := range []string{`class="card live-card onair"`, "ON AIR", `<h2><a href="https://spinitron.com/WCBN/show/1/x" target="_blank" rel="noopener">Train To Skaville</a></h2>`, "with brian tomsic",
-		"West Coast Blues", "Blind Blake", "+ Record this show", `name="from" value="onair"`, "Not recording · 320 kbps"} {
+		"West Coast Blues", "Blind Blake", "Not recording · 320 kbps"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("On air card missing %q", want)
 		}
+	}
+	if strings.Contains(page, "Record this show") || strings.Contains(page, `class="toggle-form"`) {
+		t.Error("the On air card shouldn't have a Record button; shows are added on the Shows page")
 	}
 	// The player bar, the card's compact form, has the show and song too.
 	for _, want := range []string{`<div id="player">`, `<strong>Train To Skaville</strong> <span class="muted">with brian tomsic</span>`,
@@ -106,8 +109,9 @@ func TestWebOnAir(t *testing.T) {
 		t.Errorf("live stream: %s, starts % x", resp.Header.Get("Content-Type"), buf)
 	}
 
-	// Record this show starts recording before the response, so the next
-	// refresh shows the recording instead of the On air card.
+	// Adding the show that's on the air starts recording it before the
+	// response, so the next refresh shows the recording instead of the On air
+	// card.
 	ctx, cancel := context.WithCancel(t.Context())
 	defer func() { cancel(); app.wg.Wait() }()
 	app.mu.Lock()
@@ -121,13 +125,13 @@ func TestWebOnAir(t *testing.T) {
 		}
 	}
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	resp, err = client.PostForm(fmt.Sprintf("%s/shows/%d/record", srv.URL, id), url.Values{"record": {"1"}, "from": {"onair"}})
+	resp, err = client.PostForm(fmt.Sprintf("%s/shows/%d/record", srv.URL, id), url.Values{"record": {"1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/" {
-		t.Errorf("record from On air: %s %s", resp.Status, resp.Header.Get("Location"))
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Errorf("adding the show on the air: %s", resp.Status)
 	}
 	app.mu.Lock()
 	recording := len(app.active)

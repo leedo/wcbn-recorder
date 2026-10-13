@@ -128,7 +128,6 @@
   button.end-rec { padding: 5px 12px; }
   .live-card.onair { border-color: var(--line); box-shadow: none; }
   .live-card.onair .progress div { background: var(--muted); }
-  button.record-now { font-weight: 600; padding: 5px 14px; background: var(--accent); border-color: var(--accent); color: #fff; }
   /* Site navigation */
   .site-nav { max-width: 1100px; margin: 0 auto; padding: 20px 20px 0; display: flex; gap: 20px; align-items: baseline; flex-wrap: wrap; }
   .site-nav a { font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); padding-bottom: 2px; border-bottom: 2px solid transparent; }
@@ -400,7 +399,7 @@
     const del = row.querySelector(".delete-form"); // only shows not on the schedule have one
     if (del) del.hidden = record;
   }
-  // + Add / Remove in the show list, and Record in the On air panel.
+  // + Add / Remove in the show list.
   document.addEventListener("submit", async e => {
     const form = e.target.closest(".toggle-form");
     if (!form) return;
@@ -412,7 +411,7 @@
       if (!res.ok) throw new Error(res.statusText);
       const data = await res.json();
       setRowState(data.id, data.record);
-      page.selectionChanged?.(data); // the live card's Record button works on every page
+      page.selectionChanged?.(data);
     } catch (err) {
       alert("Couldn't update: " + err.message);
     } finally {

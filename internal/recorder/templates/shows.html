@@ -42,7 +42,6 @@
     <td class="add-col">
       <form method="post" action="/shows/{{.ID}}/record" class="toggle-form" data-id="{{.ID}}">
         <input type="hidden" name="record" value="{{if .Record}}0{{else}}1{{end}}">
-        <input type="hidden" name="from" value="shows">
         <button type="submit" class="toggle" aria-label="{{if .Record}}Stop recording{{else}}Record{{end}} {{.Title}}">{{if .Record}}Remove{{else}}+ Add{{end}}</button>
       </form>
     </td>
