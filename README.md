@@ -33,7 +33,7 @@ internal/recorder/    scheduler, recording, song files, web UI (templates/)
 
 ## Web UI
 
-The UI has three pages, **Home**, **Recordings** and **Logs**, with the live panel (what's
+The UI has four pages, **Home**, **Shows**, **Recordings** and **Logs**, with the live panel (what's
 on air or recording, described below) at the top of both. Scroll it out of view
 and it shrinks into a bar pinned to the top of the window, with the show's
 artwork, title and DJ, the current song, a REC badge while recording, and the
@@ -46,8 +46,9 @@ recorder's log output: the last 1,000 lines since it started, with new lines
 added as they're logged. The log is also written to stderr as usual (with
 timestamps, except under journald, which adds its own).
 
-The home page shows the selected shows coming up in the next week, and **Your shows**, the
-list of selected shows with their next airing and a **Remove** button.
+The home page shows the selected shows coming up in the next week. The
+**Shows** page has **Your shows**, the list of selected shows with their next
+airing and a **Remove** button.
 
 **+ Add shows** swaps Your shows for the list of every show on the calendar, in
 the same place, with its DJ, category, weekly schedule, next airing and
@@ -55,7 +56,8 @@ description. Search it or filter it by category, and click **+ Add** to add a
 show: you're taken back to Your shows, with the new show highlighted. Shows
 already in Your shows are marked **✓ Added**; remove them from Your shows.
 **Cancel** goes back without changes. The list opens on its own when nothing is
-selected yet, and `/?add=1` links straight to it. Click a column header to sort by it, and click again to reverse. "Schedule"
+selected yet, and `/shows?add=1` links straight to it (`/?add=1`, from when
+the list was on the home page, redirects there). Click a column header to sort by it, and click again to reverse. "Schedule"
 sorts by weekly time slot, Monday first; "Next airing" sorts by date. The Add
 column, on the right, isn't sortable. The sort is remembered, and links can set it with
 `?sort=<column number>&dir=asc|desc` (columns count from 0).

@@ -57,9 +57,11 @@ func get(t *testing.T, u string) string {
 
 func TestWebToggle(t *testing.T) {
 	app, srv := testApp(t)
-	page := get(t, srv.URL+"/")
-	if !strings.Contains(page, "Train To Skaville") || !strings.Contains(page, "None of your shows air") ||
-		!strings.Contains(page, "not recording any shows yet") {
+	if home := get(t, srv.URL+"/"); !strings.Contains(home, `Pick some on <a href="/shows?add=1">Shows</a>`) || strings.Contains(home, `id="browse"`) {
+		t.Errorf("home page should point to Shows, not list them:\n%s", home)
+	}
+	page := get(t, srv.URL+"/shows")
+	if !strings.Contains(page, "Train To Skaville") || !strings.Contains(page, "not recording any shows yet") || !strings.Contains(page, `<main id="page" data-page="shows"`) {
 		t.Fatalf("unexpected page:\n%s", page)
 	}
 	// With nothing selected, the full list opens on its own.
@@ -107,14 +109,17 @@ func TestWebToggle(t *testing.T) {
 		t.Fatalf("toggle: %s %+v", resp.Status, out)
 	}
 
-	// With a show selected, the main page lists it and hides the full list
-	// until "Add shows" (?add=1) is used.
-	page = get(t, srv.URL+"/")
+	// With a show selected, the shows page lists it and hides the full list
+	// until "Add shows" (?add=1) is used. The home page has it coming up.
+	page = get(t, srv.URL+"/shows")
 	if !strings.Contains(page, `<li id="mine-`+id+`">`) || !strings.Contains(page, `<section id="browse" hidden>`) ||
-		!strings.Contains(page, `<div class="card" id="mine">`) || !strings.Contains(page, `href="/?add=1"`) {
-		t.Error("main page should show Your shows and hide the show list")
+		!strings.Contains(page, `<div class="card" id="mine">`) || !strings.Contains(page, `href="/shows?add=1"`) {
+		t.Error("shows page should show Your shows and hide the show list")
 	}
-	page = get(t, srv.URL+"/?add=1")
+	if home := get(t, srv.URL+"/"); !strings.Contains(home, `<a href="/shows#mine-`+id+`">Train To Skaville</a>`) {
+		t.Error("home page should list the show's next airing, linked to it in Your shows")
+	}
+	page = get(t, srv.URL+"/shows?add=1")
 	if !strings.Contains(page, `<section id="browse" >`) || !strings.Contains(page, ">Cancel<") || !strings.Contains(page, `<div class="card" id="mine" hidden>`) {
 		t.Error("?add=1 should show the show list in place of Your shows")
 	}
@@ -128,8 +133,8 @@ func TestWebToggle(t *testing.T) {
 	// No-JS path: a plain form post redirects back to where it came from.
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	for _, tc := range []struct{ from, record, want string }{
-		{"add", "1", "/#mine-" + id},
-		{"mine", "0", "/#your-shows"},
+		{"add", "1", "/shows#mine-" + id},
+		{"mine", "0", "/shows"},
 	} {
 		resp, err = client.PostForm(srv.URL+"/shows/"+id+"/record", url.Values{"record": {tc.record}, "from": {tc.from}})
 		if err != nil {
@@ -205,7 +210,7 @@ func TestWebArtwork(t *testing.T) {
 	}
 	app.store.SetSetting(ctx, "station_logo", "https://spinitron.com/images/Station/22/2263-img_logo.225x225.jpg")
 
-	page := get(t, srv.URL+"/?add=1")
+	page := get(t, srv.URL+"/shows?add=1")
 	want := `<img class="art art-md" src="https://farm6.staticflickr.com/5017/5476585780_087d4791ae_m.jpg" alt="" data-fallback="https://spinitron.com/images/Station/22/2263-img_logo.225x225.jpg" loading="lazy"`
 	if !strings.Contains(page, want) {
 		t.Errorf("Your shows artwork missing:\n%s", want)
@@ -312,6 +317,14 @@ func TestWebLayout(t *testing.T) {
 		if !strings.Contains(home, want) {
 			t.Errorf("home page missing %q", want)
 		}
+	}
+
+	// Links to the show list from when it was on the home page still work.
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	if resp, err := noFollow.Get(srv.URL + "/?add=1"); err != nil || resp.Header.Get("Location") != "/shows?add=1" {
+		t.Errorf("/?add=1 should redirect to /shows?add=1: %v %v", resp.Header.Get("Location"), err)
+	} else {
+		resp.Body.Close()
 	}
 
 	page := get(t, srv.URL+"/recordings")

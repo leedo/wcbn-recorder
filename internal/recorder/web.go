@@ -118,6 +118,19 @@ func (a *App) Handler() http.Handler {
 		w.Write(favicon)
 	})
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("add") == "1" {
+			// The show list used to be on the home page.
+			http.Redirect(w, r, "/shows?add=1", http.StatusMovedPermanently)
+			return
+		}
+		data, err := a.pageData(r.Context())
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		render(w, tmpl, "layout", layoutData{Page: "home", Live: data, Data: data})
+	})
+	mux.HandleFunc("GET /shows", func(w http.ResponseWriter, r *http.Request) {
 		data, err := a.pageData(r.Context())
 		if err != nil {
 			httpError(w, err)
@@ -126,7 +139,7 @@ func (a *App) Handler() http.Handler {
 		// The full list opens via the "Add shows" button (?add=1), and on its own
 		// when nothing is selected yet, since there's nothing else to show.
 		data.Browse = r.URL.Query().Get("add") == "1" || data.Selected == 0
-		render(w, tmpl, "layout", layoutData{Page: "home", Live: data, Data: data})
+		render(w, tmpl, "layout", layoutData{Page: "shows", Title: "Shows", Live: data, Data: data})
 	})
 	mux.HandleFunc("GET /recordings", func(w http.ResponseWriter, r *http.Request) {
 		data, err := a.pageData(r.Context()) // for the live card
@@ -327,10 +340,10 @@ func (a *App) Handler() http.Handler {
 		a.notify()
 		if !wantsJSON(r) {
 			// Without JS, go back to where the button was pressed.
-			target := "/#your-shows"
+			target := "/shows"
 			switch r.FormValue("from") {
 			case "add":
-				target = fmt.Sprintf("/#mine-%d", id) // back to Your shows, at the new row
+				target = fmt.Sprintf("/shows#mine-%d", id) // back to Your shows, at the new row
 			case "onair":
 				target = "/"
 			}
@@ -372,7 +385,7 @@ func (a *App) Handler() http.Handler {
 			writeJSON(w, map[string]any{"id": id})
 			return
 		}
-		http.Redirect(w, r, "/?add=1", http.StatusSeeOther)
+		http.Redirect(w, r, "/shows?add=1", http.StatusSeeOther)
 	})
 
 	// Reject cross-site form posts, so other web pages can't change selections.

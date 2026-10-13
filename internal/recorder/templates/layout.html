@@ -151,6 +151,7 @@
 
   /* Recordings page */
   .page-head h1 { font-size: 19px; margin: 8px 0 16px; }
+  .page-head + .section-head { margin-top: 0; }
   .rec-list .show { flex: 1; min-width: 0; }
   .rec-list .sub { font-size: 13px; overflow-wrap: anywhere; }
   /* Logs page */
@@ -192,13 +193,14 @@
 <nav class="site-nav" aria-label="Site">
   <a class="brand" href="/">WCBN Recorder</a>
   <a href="/"{{if eq .Page "home"}} aria-current="page"{{end}}>Home</a>
+  <a href="/shows"{{if eq .Page "shows"}} aria-current="page"{{end}}>Shows</a>
   <a href="/recordings"{{if eq .Page "recordings"}} aria-current="page"{{end}}>Recordings</a>
   <a href="/logs"{{if eq .Page "logs"}} aria-current="page"{{end}}>Logs</a>
 </nav>
 <div class="live-wrap"><div id="live" aria-live="polite">{{template "live" .Live}}</div></div>
 <div id="player">{{template "player" .Live.Player}}</div>
 <main id="page" data-page="{{.Page}}" tabindex="-1">
-{{if eq .Page "home"}}{{template "home" .Data}}{{else if eq .Page "recordings"}}{{template "recordings" .Data}}{{else if eq .Page "logs"}}{{template "logs" .Data}}{{end}}
+{{if eq .Page "home"}}{{template "home" .Data}}{{else if eq .Page "shows"}}{{template "shows" .Data}}{{else if eq .Page "recordings"}}{{template "recordings" .Data}}{{else if eq .Page "logs"}}{{template "logs" .Data}}{{end}}
 </main>
 <footer class="site-footer">Schedule and audio come from <a href="https://wcbn.org">wcbn.org</a>.</footer>
 <script>
@@ -477,9 +479,18 @@
     };
   }
 
-  // The home page: the live panel, upcoming recordings, Your shows, and the
-  // full show list.
+  // The home page: upcoming recordings.
   pages.home = {
+    selectionChanged(data) {
+      morph(document.getElementById("upcoming"), data.upcoming);
+    },
+    update(data) {
+      morph(document.getElementById("upcoming"), data.upcoming);
+    },
+  };
+
+  // The shows page: Your shows, and the full show list.
+  pages.shows = {
     init(main) {
       // "Add shows" swaps Your shows for the searchable list of every show, in the
       // same place; adding a show or "Cancel" swaps back. The state is kept in the
@@ -494,7 +505,7 @@
         main.querySelector("#browse-controls").hidden = !open;
         addToggle.setAttribute("aria-expanded", open);
         addToggle.textContent = open ? "Cancel" : "+ Add shows";
-        addToggle.href = open ? "/" : "/?add=1";
+        addToggle.href = open ? "/shows" : "/shows?add=1";
         const url = new URL(location);
         if (open) url.searchParams.set("add", "1"); else url.searchParams.delete("add");
         url.hash = "";
@@ -570,11 +581,9 @@
     // Record/Remove changed what's selected.
     selectionChanged(data) {
       morph(document.getElementById("mine"), data.mine);
-      morph(document.getElementById("upcoming"), data.upcoming);
       document.getElementById("selected-count").textContent = `(${data.selected})`;
     },
     update(data) {
-      morph(document.getElementById("upcoming"), data.upcoming);
       morph(document.getElementById("mine"), data.mine);
       const recordingShows = new Set(data.recordingShows.map(String));
       document.querySelectorAll("#browse tbody tr").forEach(row => {

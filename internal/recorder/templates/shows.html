@@ -1,0 +1,86 @@
+{{/* The shows page: Your shows, the shows picked for recording, and in its
+   place on "+ Add shows" (?add=1), the list of every show to add from. */}}
+{{define "shows"}}
+<header class="page-head"><h1>Shows</h1></header>
+<div class="section-head" id="your-shows">
+  <h2><span id="shows-title">{{if .Browse}}Add shows{{else}}Your shows{{end}}</span> <span class="muted" id="selected-count"{{if .Browse}} hidden{{end}}>({{.Selected}})</span></h2>
+  <div class="controls" id="browse-controls"{{if not .Browse}} hidden{{end}}>
+    <input type="search" id="q" placeholder="Search {{len .Shows}} shows, DJs, descriptions…" autocomplete="off" aria-label="Search shows">
+    <select id="category" aria-label="Category">
+      <option value="">All categories</option>
+      {{range .Categories}}<option value="{{lower .}}">{{.}}</option>{{end}}
+    </select>
+  </div>
+  <a class="button primary" id="add-toggle" href="{{if .Browse}}/shows{{else}}/shows?add=1{{end}}"
+     role="button" aria-controls="browse" aria-expanded="{{.Browse}}">{{if .Browse}}Cancel{{else}}+ Add shows{{end}}</a>
+</div>
+<div class="card" id="mine"{{if .Browse}} hidden{{end}}>{{template "mine" .}}</div>
+
+<section id="browse" {{if not .Browse}}hidden{{end}}>
+<div class="card">
+<table>
+  <thead><tr>
+    <th aria-sort="ascending"><button type="button" class="sort" data-col="0">Show</button></th>
+    <th aria-sort="none"><button type="button" class="sort" data-col="1">DJ</button></th>
+    <th aria-sort="none"><button type="button" class="sort" data-col="2">Category</button></th>
+    <th aria-sort="none"><button type="button" class="sort" data-col="3" data-type="number">Schedule</button></th>
+    <th aria-sort="none"><button type="button" class="sort" data-col="4" data-type="number">Next airing</button></th>
+    <th class="add-col">Add</th>
+  </tr></thead>
+  <tbody>
+  {{range .Shows}}
+  <tr id="show-{{.ID}}" class="{{if .Record}}selected{{end}} {{if not .OnCalendar}}off{{end}}"
+      data-search="{{lower .Title}} {{lower .DJ}} {{lower .Description}}" data-category="{{lower .Category}}">
+    <td class="title" data-sort="{{lower .Title}}">
+      <div class="title-row">
+      {{template "art" (art .Image $.StationLogo "art-sm" true)}}
+      <div>
+      {{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>{{else}}<strong>{{.Title}}</strong>{{end}}
+       <span class="tag rec rec-tag"{{if not .RecordingNow}} hidden{{end}}>● recording</span>
+      {{with .Description}}<details><summary>Description</summary><p>{{.}}</p></details>{{end}}
+      </div>
+      </div>
+    </td>
+    <td data-sort="{{lower .DJ}}">{{.DJ}}</td>
+    <td data-sort="{{lower .Category}}">{{.Category}}</td>
+    <td class="sched muted" data-sort="{{if ge .ScheduleKey 0}}{{.ScheduleKey}}{{end}}">{{.Schedule}}</td>
+    <td class="nowrap" data-sort="{{if .OnCalendar}}{{.NextAiring.Unix}}{{end}}">
+      {{if .OnCalendar}}{{when .NextAiring}}{{else}}
+        <span class="muted">Not on this week's schedule</span>
+        {{if .LastSeen.IsZero}}<br><span class="muted">(never seen)</span>{{end}}
+        <form method="post" action="/shows/{{.ID}}/delete" class="delete-form"{{if .Record}} hidden{{end}}><br><button type="submit" class="link">remove</button></form>
+      {{end}}
+    </td>
+    <td class="add-col">
+      <form method="post" action="/shows/{{.ID}}/record" class="toggle-form" data-id="{{.ID}}">
+        <input type="hidden" name="record" value="1">
+        <input type="hidden" name="from" value="add">
+        <button type="submit" class="toggle"{{if .Record}} disabled{{end}}>{{if .Record}}✓ Added{{else}}+ Add{{end}}</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+</section>
+{{end}}
+
+{{define "mine"}}
+{{if .Mine}}<ul class="list mine-list">
+  {{range .Mine}}<li id="mine-{{.ID}}">
+    {{template "art" (art .Image $.StationLogo "art-md" true)}}
+    <div class="show">
+      {{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>{{else}}<strong>{{.Title}}</strong>{{end}}
+      {{if .RecordingNow}} <span class="tag rec">● recording</span>{{end}}
+      <div class="sub muted">{{with .DJ}}with {{.}}{{end}}{{if and .DJ .Schedule}} · {{end}}{{.Schedule}}</div>
+    </div>
+    <div class="when">{{if .OnCalendar}}{{when .NextAiring}}{{else}}<span class="muted">Not on this week's schedule{{if .LastSeen.IsZero}} (never seen){{end}}</span>{{end}}</div>
+    <form method="post" action="/shows/{{.ID}}/record" class="toggle-form" data-id="{{.ID}}">
+      <input type="hidden" name="record" value="0">
+      <input type="hidden" name="from" value="mine">
+      <button type="submit" aria-label="Stop recording {{.Title}}">Remove</button>
+    </form>
+  </li>{{end}}
+</ul>{{else}}<p class="empty muted">You're not recording any shows yet. Use <strong>+ Add shows</strong> to pick some.</p>{{end}}
+{{end}}
