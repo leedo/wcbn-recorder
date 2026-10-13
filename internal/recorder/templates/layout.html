@@ -196,6 +196,7 @@
 </script>
 </head>
 <body>
+<div class="live-wrap"><div id="live" aria-live="polite">{{template "live" .Live}}</div></div>
 <nav class="site-nav" aria-label="Site">
   <a class="brand" href="/">WCBN Recorder</a>
   <a href="/"{{if eq .Page "home"}} aria-current="page"{{end}}>Home</a>
@@ -203,7 +204,6 @@
   <a href="/recordings"{{if eq .Page "recordings"}} aria-current="page"{{end}}>Recordings</a>
   <a href="/logs"{{if eq .Page "logs"}} aria-current="page"{{end}}>Logs</a>
 </nav>
-<div class="live-wrap"><div id="live" aria-live="polite">{{template "live" .Live}}</div></div>
 <div id="player">{{template "player" .Live.Player}}</div>
 <main id="page" data-page="{{.Page}}" tabindex="-1">
 {{if eq .Page "home"}}{{template "home" .Data}}{{else if eq .Page "shows"}}{{template "shows" .Data}}{{else if eq .Page "recordings"}}{{template "recordings" .Data}}{{else if eq .Page "logs"}}{{template "logs" .Data}}{{end}}
