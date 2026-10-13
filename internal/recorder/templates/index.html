@@ -18,14 +18,16 @@
     <h2>{{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
     {{with .DJ}}<span class="muted">with {{.}}</span>{{end}}
     {{if not .Start.IsZero}}<span class="slot muted">{{clock .Start}} – {{clock .End}}</span>{{end}}
-    <button type="button" class="listen" aria-pressed="false" aria-label="Listen to WCBN live">▶ Listen</button>
-    {{if .ShowID}}
-    <form method="post" action="/shows/{{.ShowID}}/record" class="toggle-form" data-id="{{.ShowID}}">
-      <input type="hidden" name="record" value="1">
-      <input type="hidden" name="from" value="onair">
-      <button type="submit" class="record-now">{{if .Selected}}● Record now{{else}}+ Record this show{{end}}</button>
-    </form>
-    {{end}}
+    <div class="live-actions">
+      <button type="button" class="listen" aria-pressed="false" aria-label="Listen to WCBN live">▶ Listen</button>
+      {{if .ShowID}}
+      <form method="post" action="/shows/{{.ShowID}}/record" class="toggle-form" data-id="{{.ShowID}}">
+        <input type="hidden" name="record" value="1">
+        <input type="hidden" name="from" value="onair">
+        <button type="submit" class="record-now">{{if .Selected}}● Record now{{else}}+ Record this show{{end}}</button>
+      </form>
+      {{end}}
+    </div>
   </div>
   {{if not .Start.IsZero}}<div class="progress" role="progressbar" aria-label="Show progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Progress}}"><div style="width: {{.Progress}}%"></div></div>{{end}}
   <div class="stats muted">Not recording{{with .Bitrate}} · {{.}} kbps{{end}}{{if .Selected}} · this show is in Your shows{{end}}</div>
@@ -54,12 +56,14 @@
     <h2>{{if .ShowID}}<a href="/shows#mine-{{.ShowID}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
     {{with .DJ}}<span class="muted">with {{.}}</span>{{end}}
     <span class="slot muted">{{clock .Start}} – {{clock .End}}</span>
-    <button type="button" class="listen" aria-pressed="false" aria-label="Listen to WCBN live">▶ Listen</button>
-    {{if not (or .Finishing .Stopped)}}
-    <form method="post" action="/recordings/{{.ID}}/stop" class="stop-form" data-title="{{.Title}}">
-      <button type="submit" class="end-rec">End recording</button>
-    </form>
-    {{end}}
+    <div class="live-actions">
+      <button type="button" class="listen" aria-pressed="false" aria-label="Listen to WCBN live">▶ Listen</button>
+      {{if not (or .Finishing .Stopped)}}
+      <form method="post" action="/recordings/{{.ID}}/stop" class="stop-form" data-title="{{.Title}}">
+        <button type="submit" class="end-rec">End recording</button>
+      </form>
+      {{end}}
+    </div>
   </div>
   <div class="progress" role="progressbar" aria-label="Show progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Progress}}"><div style="width: {{.Progress}}%"></div></div>
   <div class="stats muted">

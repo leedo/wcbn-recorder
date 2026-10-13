@@ -104,6 +104,8 @@
   .live-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
   .live-head h2 { margin: 0; font-size: 19px; }
   .live-head .slot { margin-left: auto; font-variant-numeric: tabular-nums; }
+  /* The card's buttons wrap onto the next line together, not one at a time. */
+  .live-actions { display: flex; gap: 12px; align-items: center; flex-wrap: nowrap; }
   .badge { font-size: 11px; font-weight: 700; letter-spacing: .06em; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; align-self: center; }
   .badge.rec { color: var(--rec); }
   .badge.warn { color: #c98a00; }
