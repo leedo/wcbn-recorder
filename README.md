@@ -86,12 +86,12 @@ While a show is recording, the live panel shows the recording instead:
 
 ### Listening
 
-**▶ Listen**, on the live panel or the pinned bar, plays the station through the recorder at
+The **play button** (a ▶ in a circle), on the live panel or the pinned bar, plays the station through the recorder at
 `/listen`. It's one continuous stream, whatever is or isn't being recorded, so
 it keeps playing when a recording starts or ends and when the station moves on
-to the next show. **■ Stop listening** disconnects. While it's playing, the
+to the next show. While it plays, the button is a filled circle with ■, which disconnects. While it's playing, the
 URL has `?listen=1`, so reloading the page starts it again, if the browser
-lets audio start on its own (otherwise press Listen). Because it goes through the
+lets audio start on its own (otherwise press play). Because it goes through the
 recorder, it works over an SSH tunnel like the rest of the UI, and isn't
 affected by the station's incomplete certificate chain.
 

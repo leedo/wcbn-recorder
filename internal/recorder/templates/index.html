@@ -31,7 +31,7 @@
     <div class="now-playing"><span class="meta">No song information from the station right now.</span></div>
     {{end}}
     <div class="live-actions">
-      <button type="button" class="listen" aria-pressed="false" aria-label="Listen to WCBN live">▶ Listen</button>
+      {{template "listen"}}
       {{if .ShowID}}
       <form method="post" action="/shows/{{.ShowID}}/record" class="toggle-form" data-id="{{.ShowID}}">
         <input type="hidden" name="record" value="1">
@@ -76,7 +76,7 @@
     <div class="now-playing"><span class="meta">Waiting for song information from the stream…</span></div>
     {{end}}
     <div class="live-actions">
-      <button type="button" class="listen" aria-pressed="false" aria-label="Listen to WCBN live">▶ Listen</button>
+      {{template "listen"}}
     </div>
   </div>
   </div>
@@ -90,6 +90,13 @@
   {{range .Upcoming}}<li><span class="time">{{when .Start}} – {{clock .End}}</span><span><a href="/shows#show-{{.ShowID}}">{{.Title}}</a>{{with .DJ}} <span class="muted">with {{.}}</span>{{end}}</span></li>{{end}}
 </ul>{{else if .Selected}}<p class="empty muted">None of your shows air in the next two days.</p>{{else}}<p class="empty muted">You're not recording any shows yet. Pick some on <a href="/shows">Shows</a>.</p>{{end}}
 {{end}}
+
+{{/* The Listen button: a play icon in a circle, or stop while listening
+   (aria-pressed, set by the page script, which also sets the label). */}}
+{{define "listen"}}<button type="button" class="listen" aria-pressed="false" aria-label="Listen to WCBN live" title="Listen to WCBN live">
+<svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>
+<svg class="icon-stop" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
+</button>{{end}}
 
 {{define "art"}}
 {{- if .Src}}<img class="art {{.Size}}" src="{{.Src}}" alt=""{{with .Fallback}} data-fallback="{{.}}"{{end}}{{if .Lazy}} loading="lazy"{{end}} decoding="async" referrerpolicy="no-referrer">

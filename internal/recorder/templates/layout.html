@@ -95,9 +95,12 @@
   .live-head .slot { margin-left: auto; font-variant-numeric: tabular-nums; }
   /* Now playing, with the card's buttons at the bottom right. The buttons
      wrap onto the next line together, not one at a time. */
-  .live-foot { display: flex; align-items: flex-end; gap: 12px 16px; flex-wrap: wrap; margin-top: 16px; }
+  .live-foot { display: flex; align-items: stretch; gap: 12px 16px; flex-wrap: wrap; margin-top: 16px; }
   .live-foot .now-playing { flex: 1 1 260px; min-width: 0; margin-top: 0; }
-  .live-actions { display: flex; gap: 12px; align-items: center; flex-wrap: nowrap; margin-left: auto; }
+  /* The Listen circle is as tall as Now playing (label to artist); other
+     buttons sit at the bottom beside it. */
+  .live-actions { display: flex; gap: 12px; align-items: flex-end; flex-wrap: nowrap; margin-left: auto; }
+  .live-actions button.listen { align-self: stretch; height: auto; min-height: 44px; }
   .badge { font-size: 11px; font-weight: 700; letter-spacing: .06em; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; align-self: center; }
   .badge.rec { color: var(--rec); }
   .badge.warn { color: #c98a00; }
@@ -110,8 +113,14 @@
   .now-playing .song { font-size: 22px; font-weight: 650; line-height: 1.25; }
   .now-playing .artist { font-size: 16px; }
   .now-playing .meta { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
-  button.listen { font-weight: 600; padding: 5px 14px; border-color: var(--rec); color: var(--rec); }
+  button.listen { display: grid; place-items: center; aspect-ratio: 1; height: 40px; padding: 0; border-radius: 50%; border: 2px solid var(--rec); background: none; color: var(--rec); }
+  button.listen:hover { border-color: var(--rec); background: color-mix(in srgb, var(--rec) 12%, transparent); }
+  button.listen svg { grid-area: 1 / 1; width: 46%; height: 46%; fill: currentColor; }
+  button.listen .icon-play { translate: 6% 0; } /* a triangle looks centred a little right of centre */
+  button.listen .icon-stop, button.listen[aria-pressed=true] .icon-play { display: none; }
+  button.listen[aria-pressed=true] .icon-stop { display: block; }
   button.listen[aria-pressed=true] { background: var(--rec); color: #fff; }
+  button.listen[data-state=connecting] { animation: pulse 1.6s infinite; }
   button.listen:focus-visible { outline: 2px solid var(--rec); outline-offset: 2px; }
   button.end-rec { padding: 5px 12px; }
   .live-card.onair { border-color: var(--line); box-shadow: none; }
@@ -265,7 +274,10 @@
   function syncPlayer() {
     document.querySelectorAll("#live button.listen, #player button.listen").forEach(b => {
       b.setAttribute("aria-pressed", listening);
-      b.textContent = !listening ? "▶ Listen" : listenState === "playing" ? "■ Stop listening" : "… Connecting";
+      const label = !listening ? "Listen to WCBN live" : listenState === "playing" ? "Stop listening" : "Connecting… (press to stop)";
+      b.setAttribute("aria-label", label);
+      b.title = label;
+      b.dataset.state = listening ? listenState : "";
     });
   }
   // The bar slides in once the card has gone up under where the bar sits.
@@ -627,6 +639,6 @@
     <span class="player-show">{{if .Recording}}<span class="badge rec"><span class="dot"></span>REC</span>{{end}}<strong>{{.Title}}</strong>{{with .DJ}} <span class="muted">with {{.}}</span>{{end}}</span>
     <span class="player-song muted">{{if .Song}}{{.Song}}{{with .Artist}} — {{.}}{{end}}{{else}}Live stream{{end}}</span>
   </button>
-  <button type="button" class="listen" aria-pressed="false" aria-label="Listen to WCBN live">▶ Listen</button>
+  {{template "listen"}}
 </div>
 {{end}}
