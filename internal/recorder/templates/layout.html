@@ -95,12 +95,15 @@
   .live-head .slot { margin-left: auto; font-variant-numeric: tabular-nums; }
   /* Now playing, with the card's buttons at the bottom right. The buttons
      wrap onto the next line together, not one at a time. */
-  .live-foot { display: flex; align-items: stretch; gap: 12px 16px; flex-wrap: wrap; margin-top: 16px; }
+  .live-foot { display: flex; align-items: flex-start; gap: 12px 16px; flex-wrap: wrap; margin-top: 16px; }
   .live-foot .now-playing { flex: 1 1 260px; min-width: 0; margin-top: 0; }
-  /* The Listen circle is as tall as Now playing (label to artist); other
-     buttons sit at the bottom beside it. */
+  /* The Listen circle is as tall as Now playing, from the label to the
+     artist: --now-playing-height, the sum of its line heights below. A fixed
+     size, not stretched to fit, which browsers don't agree on for a circle.
+     Other buttons sit at the bottom beside it. */
+  .live-card { --now-playing-height: calc(16px + 28px + 23px + 2 * 2px); }
   .live-actions { display: flex; gap: 12px; align-items: flex-end; flex-wrap: nowrap; margin-left: auto; }
-  .live-actions button.listen { align-self: stretch; height: auto; min-height: 44px; }
+  .live-actions button.listen { width: var(--now-playing-height); height: var(--now-playing-height); }
   .badge { font-size: 11px; font-weight: 700; letter-spacing: .06em; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; align-self: center; }
   .badge.rec { color: var(--rec); }
   .badge.warn { color: #c98a00; }
@@ -109,13 +112,13 @@
   .progress div { height: 100%; background: var(--rec); transition: width .5s; }
   .stats { font-size: 13px; font-variant-numeric: tabular-nums; }
   .now-playing { margin-top: 16px; display: grid; gap: 2px; }
-  .now-playing .label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-  .now-playing .song { font-size: 22px; font-weight: 650; line-height: 1.25; }
-  .now-playing .artist { font-size: 16px; }
+  .now-playing .label { font-size: 11px; line-height: 16px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .now-playing .song { font-size: 22px; font-weight: 650; line-height: 28px; }
+  .now-playing .artist { font-size: 16px; line-height: 23px; }
   .now-playing .meta { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
-  button.listen { display: grid; place-items: center; aspect-ratio: 1; height: 40px; padding: 0; border-radius: 50%; border: 2px solid var(--rec); background: none; color: var(--rec); }
+  button.listen { display: grid; place-items: center; flex: none; width: 40px; height: 40px; padding: 0; border-radius: 50%; border: 2px solid var(--rec); background: none; color: var(--rec); }
   button.listen:hover { border-color: var(--rec); background: color-mix(in srgb, var(--rec) 12%, transparent); }
-  button.listen svg { grid-area: 1 / 1; width: 46%; height: 46%; fill: currentColor; }
+  button.listen svg { grid-area: 1 / 1; width: 58%; height: 58%; fill: currentColor; }
   button.listen .icon-play { translate: 6% 0; } /* a triangle looks centred a little right of centre */
   button.listen .icon-stop, button.listen[aria-pressed=true] .icon-play { display: none; }
   button.listen[aria-pressed=true] .icon-stop { display: block; }
