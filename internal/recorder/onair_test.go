@@ -135,7 +135,7 @@ func TestWebOnAir(t *testing.T) {
 	if recording != 1 {
 		t.Fatalf("%d recordings started", recording)
 	}
-	if page := get(t, srv.URL+"/"); strings.Contains(page, `live-card onair"`) || !strings.Contains(page, "End recording") {
+	if page := get(t, srv.URL+"/"); strings.Contains(page, `live-card onair"`) || !strings.Contains(page, `<span class="badge rec">`) {
 		t.Error("page should show the recording, not the On air card")
 	}
 }

@@ -105,7 +105,7 @@ listener waits about 5 seconds in Chrome, because the station sends only about
 so the recording's audio, and the stream after a dropped connection, are lined
 up frame for frame: nothing is repeated or skipped.
 
-**End recording** stops the recording now, after asking to confirm. Everything
+**End recording**, on the Recordings page, stops the recording now, after asking to confirm. Everything
 recorded so far is saved as usual (whole-show file, songs and playlist), and the
 show stays selected, so its next airing is recorded normally. It isn't started
 again during the current airing by itself. To record the rest of the airing

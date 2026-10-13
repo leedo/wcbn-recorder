@@ -441,8 +441,8 @@
       button.disabled = false;
     }
   });
-  // End recording: confirm, then stop it; the panel shows SAVING until the
-  // files are written, then disappears.
+  // End recording, on the Recordings page: confirm, then stop it; it shows
+  // as saving until its files are written (and the live card as SAVING).
   document.addEventListener("submit", async e => {
     const form = e.target.closest(".stop-form");
     if (!form) return;

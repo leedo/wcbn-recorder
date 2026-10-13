@@ -85,17 +85,19 @@ func TestWebLive(t *testing.T) {
 	f := newFakeRecording(t, testConfig())
 	f.title("Pressure Drop by Toots & the Maytals on Train To Skaville with brian tomsic")
 	f.frames(1, 3)
-	f.Write(nil)    // marks the stream connected
-	f.catalogID = 7 // as if it were in the recordings table, which End recording needs
+	f.Write(nil) // marks the stream connected
 	app.mu.Lock()
 	app.active[f.job.Event.Key()] = f.recording
 	app.mu.Unlock()
 
 	page := get(t, srv.URL+"/")
-	for _, want := range []string{`<section class="card live-card"`, "REC", "Now playing", "Pressure Drop", "Toots &amp; the Maytals", `class="stop-form"`, "End recording", " · 320 kbps · stops at "} {
+	for _, want := range []string{`<section class="card live-card"`, "REC", "Now playing", "Pressure Drop", "Toots &amp; the Maytals", " · 320 kbps · stops at "} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page missing %q", want)
 		}
+	}
+	if strings.Contains(page, `class="stop-form"`) {
+		t.Error("the live card shouldn't have End recording; that's on the Recordings page")
 	}
 	if strings.Contains(page, `class="songs"`) || strings.Contains(page, `<span class="meta">Started`) {
 		t.Error("the live card shouldn't list the songs recorded so far, or how long the current one has played")
