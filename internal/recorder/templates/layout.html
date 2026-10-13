@@ -75,12 +75,7 @@
   /* In Add shows, the search box and category filter share the heading row. */
   .section-head .controls { flex: 1 1 360px; flex-wrap: nowrap; margin: 0; }
   .section-head .controls input[type=search] { min-width: 120px; }
-  .section-head :is(input, select, a.button) { box-sizing: border-box; height: 34px; }
-  .section-head a.button { display: inline-flex; align-items: center; }
-  a.button { display: inline-block; font-size: 14px; font-weight: 600; padding: 7px 14px; border-radius: 7px; border: 1px solid var(--line); text-decoration: none; white-space: nowrap; }
-  a.button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  a.button.primary[aria-expanded=true] { background: var(--card); border-color: var(--line); color: var(--fg); }
-  a.button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .section-head :is(input, select) { box-sizing: border-box; height: 34px; }
   #browse { scroll-margin-top: 16px; }
   .mine-list li { align-items: center; }
   .mine-list .show { flex: 1; min-width: 0; }
@@ -406,21 +401,19 @@
       setRowState(data.id, data.record);
       page.selectionChanged?.(data); // the live card's Record button works on every page
       if (data.record && form.closest("#browse")) {
-        // Added from the show list: back to Your shows, with the new row highlighted.
-        page.setBrowse?.(false);
+        // Added from the show list: highlight it in Your shows, above, without
+        // leaving the list, so more can be added. An animation, not a class:
+        // refreshes keep attributes in step with the server, and would drop a
+        // class straight away.
         const row = document.getElementById("mine-" + data.id);
-        if (row) {
-          // An animation, not a class: refreshes keep attributes in step with
-          // the server, and would drop a class straight away.
-          const from = getComputedStyle(document.documentElement).getPropertyValue("--accent-bg");
-          row.animate([{ background: from }, { background: "transparent" }], { duration: 2500, easing: "ease-out" });
-          row.scrollIntoView({ block: "nearest" });
-        }
+        const from = getComputedStyle(document.documentElement).getPropertyValue("--accent-bg");
+        row?.animate([{ background: from }, { background: "transparent" }], { duration: 2500, easing: "ease-out" });
       }
     } catch (err) {
       alert("Couldn't update: " + err.message);
     } finally {
-      button.disabled = false;
+      // A show added from the list stays "✓ Added" (disabled); see setRowState.
+      button.disabled = form.closest("tr")?.classList.contains("selected") ?? false;
     }
   });
   // Remove a show that's no longer on the calendar.
@@ -519,37 +512,7 @@
   // The shows page: Your shows, and the full show list.
   pages.shows = {
     init(main) {
-      // "Add shows" swaps Your shows for the searchable list of every show, in the
-      // same place; adding a show or "Cancel" swaps back. The state is kept in the
-      // URL (?add=1), so a reload keeps it.
-      const browse = main.querySelector("#browse"), addToggle = main.querySelector("#add-toggle");
-      const mineList = main.querySelector("#mine"), showsHead = main.querySelector("#your-shows");
-      function setBrowse(open) {
-        browse.hidden = !open;
-        mineList.hidden = open;
-        main.querySelector("#shows-title").textContent = open ? "Add shows" : "Your shows";
-        main.querySelector("#selected-count").hidden = open;
-        main.querySelector("#browse-controls").hidden = !open;
-        addToggle.setAttribute("aria-expanded", open);
-        addToggle.textContent = open ? "Cancel" : "+ Add shows";
-        addToggle.href = open ? "/shows" : "/shows?add=1";
-        const url = new URL(location);
-        if (open) url.searchParams.set("add", "1"); else url.searchParams.delete("add");
-        url.hash = "";
-        history.replaceState(history.state, "", url);
-        if (open) {
-          main.querySelector("#q").focus({ preventScroll: true });
-        } else {
-          // The show list may have been scrolled far down; bring the heading back.
-          if (showsHead.getBoundingClientRect().top < 0) showsHead.scrollIntoView({ block: "start" });
-          addToggle.focus({ preventScroll: true });
-        }
-      }
-      this.setBrowse = setBrowse;
-      addToggle.addEventListener("click", e => {
-        e.preventDefault();
-        setBrowse(browse.hidden);
-      });
+      const browse = main.querySelector("#browse");
 
       // Client-side filtering.
       const q = main.querySelector("#q"), cat = main.querySelector("#category");

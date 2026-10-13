@@ -93,7 +93,7 @@
 {{define "upcoming"}}
 {{if .Upcoming}}<ul class="list">
   {{range .Upcoming}}<li><span class="time">{{when .Start}} – {{clock .End}}</span><span><a href="/shows#mine-{{.ShowID}}">{{.Title}}</a>{{with .DJ}} <span class="muted">with {{.}}</span>{{end}}</span></li>{{end}}
-</ul>{{else if .Selected}}<p class="empty muted">None of your shows air in the next week.</p>{{else}}<p class="empty muted">You're not recording any shows yet. Pick some on <a href="/shows?add=1">Shows</a>.</p>{{end}}
+</ul>{{else if .Selected}}<p class="empty muted">None of your shows air in the next week.</p>{{else}}<p class="empty muted">You're not recording any shows yet. Pick some on <a href="/shows#add-shows">Shows</a>.</p>{{end}}
 {{end}}
 
 {{define "art"}}

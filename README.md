@@ -57,14 +57,13 @@ timestamps, except under journald, which adds its own).
 **Shows** page has **Your shows**, the list of selected shows with their next
 airing and a **Remove** button.
 
-**+ Add shows** swaps Your shows for the list of every show on the calendar, in
-the same place, with its DJ, category, weekly schedule, next airing and
-description. Search it or filter it by category, and click **+ Add** to add a
-show: you're taken back to Your shows, with the new show highlighted. Shows
-already in Your shows are marked **✓ Added**; remove them from Your shows.
-**Cancel** goes back without changes. The list opens on its own when nothing is
-selected yet, and `/shows?add=1` links straight to it (`/?add=1`, from when
-the list was on the home page, redirects there). Click a column header to sort by it, and click again to reverse. "Schedule"
+Below it, **Add shows** lists every show on the calendar, with its DJ,
+category, weekly schedule, next airing and description. Search it or filter it
+by category, and click **+ Add** to add a show: it appears in Your shows,
+highlighted, and you stay in the list to add more. Shows already in Your shows
+are marked **✓ Added**; remove them from Your shows. `/shows#add-shows` links
+straight to the list (old `/?add=1` and `/shows?add=1` links redirect there).
+Click a column header to sort by it, and click again to reverse. "Schedule"
 sorts by weekly time slot, Monday first; "Next airing" sorts by date. The Add
 column, on the right, isn't sortable. The sort is remembered, and links can set it with
 `?sort=<column number>&dir=asc|desc` (columns count from 0).

@@ -57,7 +57,6 @@ type pageData struct {
 	Categories  []string
 	Selected    int
 	StationLogo string     // fallback artwork
-	Browse      bool       // show the full list (search + table) on load
 	OnAir       *onAirView // what's on, when nothing is recording
 	Player      playerView
 }
@@ -133,8 +132,8 @@ func (a *App) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("add") == "1" {
-			// The show list used to be on the home page.
-			http.Redirect(w, r, "/shows?add=1", http.StatusMovedPermanently)
+			// The show list used to be on the home page, opened with ?add=1.
+			http.Redirect(w, r, "/shows#add-shows", http.StatusMovedPermanently)
 			return
 		}
 		data, err := a.pageData(r.Context())
@@ -145,14 +144,16 @@ func (a *App) Handler() http.Handler {
 		render(w, tmpl, "layout", layoutData{Page: "home", Live: data, Data: data})
 	})
 	mux.HandleFunc("GET /shows", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("add") == "1" {
+			// The show list used to be opened with ?add=1; it's always shown now.
+			http.Redirect(w, r, "/shows#add-shows", http.StatusMovedPermanently)
+			return
+		}
 		data, err := a.pageData(r.Context())
 		if err != nil {
 			httpError(w, err)
 			return
 		}
-		// The full list opens via the "Add shows" button (?add=1), and on its own
-		// when nothing is selected yet, since there's nothing else to show.
-		data.Browse = r.URL.Query().Get("add") == "1" || data.Selected == 0
 		render(w, tmpl, "layout", layoutData{Page: "shows", Title: "Shows", Live: data, Data: data})
 	})
 	mux.HandleFunc("GET /recordings", func(w http.ResponseWriter, r *http.Request) {
@@ -381,7 +382,7 @@ func (a *App) Handler() http.Handler {
 			target := "/shows"
 			switch r.FormValue("from") {
 			case "add":
-				target = fmt.Sprintf("/shows#mine-%d", id) // back to Your shows, at the new row
+				target = fmt.Sprintf("/shows#show-%d", id) // back to the show in the list, to add more
 			case "onair":
 				target = "/"
 			}
@@ -423,7 +424,7 @@ func (a *App) Handler() http.Handler {
 			writeJSON(w, map[string]any{"id": id})
 			return
 		}
-		http.Redirect(w, r, "/shows?add=1", http.StatusSeeOther)
+		http.Redirect(w, r, "/shows#add-shows", http.StatusSeeOther)
 	})
 
 	// Reject cross-site form posts, so other web pages can't change selections.
