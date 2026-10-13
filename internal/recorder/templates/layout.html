@@ -119,14 +119,14 @@
   .now-playing .artist { font-size: 16px; line-height: 23px; }
   .now-playing .meta { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
   /* A circle a little lighter than the card (darker, on the light theme),
-     with no outline; red while playing. */
+     with no outline; the same while playing, with a stop icon. */
   button.listen { display: grid; place-items: center; flex: none; width: 40px; height: 40px; padding: 0; border-radius: 50%; border: 0; background: color-mix(in srgb, var(--fg) 10%, var(--card)); color: var(--listen-icon); }
   button.listen:hover { background: color-mix(in srgb, var(--fg) 16%, var(--card)); }
+  /* The play triangle's path is drawn right of the middle of its box, so
+     its centre of mass is in the middle of the circle, which looks centred. */
   button.listen svg { grid-area: 1 / 1; width: 58%; height: 58%; fill: currentColor; }
-  button.listen .icon-play { translate: 6% 0; } /* a triangle looks centred a little right of centre */
   button.listen .icon-stop, button.listen[aria-pressed=true] .icon-play { display: none; }
   button.listen[aria-pressed=true] .icon-stop { display: block; }
-  button.listen[aria-pressed=true], button.listen[aria-pressed=true]:hover { background: var(--rec); color: #fff; }
   button.listen[data-state=connecting] { animation: pulse 1.6s infinite; }
   button.listen:focus-visible { outline: 2px solid var(--rec); outline-offset: 2px; }
   button.end-rec { padding: 5px 12px; }
