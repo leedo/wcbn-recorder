@@ -57,10 +57,7 @@
   td.title { min-width: 220px; }
   td.title a { font-weight: 600; text-decoration: none; }
   td.title a:hover { text-decoration: underline; }
-  details { margin-top: 4px; font-size: 13px; }
-  details summary { cursor: pointer; color: var(--muted); }
-  details p { margin: 6px 0 0; white-space: pre-line; }
-  .sched { font-size: 13px; max-width: 260px; }
+  td.title .sub { font-size: 13px; margin-top: 2px; }
   .nowrap { white-space: nowrap; }
   .tag { font-size: 11px; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line); white-space: nowrap; }
   .tag.rec { border-color: var(--rec); color: var(--rec); }
@@ -550,7 +547,7 @@
         headers.forEach((th, i) => {
           if (th.querySelector("button.sort")) th.setAttribute("aria-sort", i === col ? (dir === "desc" ? "descending" : "ascending") : "none");
         });
-        localStorage.setItem("wcbn-sort-2", JSON.stringify({ col, dir })); // "-2": column numbers changed when Add moved
+        localStorage.setItem("wcbn-sort-4", JSON.stringify({ col, dir })); // "-4": column numbers changed when DJ went
       }
       headers.forEach((th, col) => {
         const button = th.querySelector("button.sort");
@@ -564,7 +561,7 @@
       // Restore the last sort (?sort=<column>&dir=asc|desc overrides it, for links).
       const params = new URLSearchParams(location.search);
       let saved = null;
-      try { saved = JSON.parse(localStorage.getItem("wcbn-sort-2")); } catch {}
+      try { saved = JSON.parse(localStorage.getItem("wcbn-sort-4")); } catch {}
       if (params.has("sort")) saved = { col: Number(params.get("sort")), dir: params.get("dir") === "desc" ? "desc" : "asc" };
       if (saved && headers[saved.col]?.querySelector("button.sort")) sortBy(saved.col, saved.dir);
     },

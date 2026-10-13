@@ -12,7 +12,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -45,7 +44,6 @@ type showView struct {
 	NextAiring   time.Time
 	OnCalendar   bool
 	RecordingNow bool
-	ScheduleKey  int // sort position of the show's first weekly slot; -1 if unknown
 }
 
 type pageData struct {
@@ -507,7 +505,7 @@ func (a *App) pageData(ctx context.Context) (pageData, error) {
 		_, onCal := next[sh.Key]
 		v := showView{
 			Show: sh, NextAiring: next[sh.Key], OnCalendar: onCal,
-			RecordingNow: recordingNow[sh.Key], ScheduleKey: scheduleSortKey(sh.Schedule),
+			RecordingNow: recordingNow[sh.Key],
 		}
 		data.Shows = append(data.Shows, v)
 		if sh.Record {
@@ -610,34 +608,6 @@ func (a *App) onAir(ctx context.Context, events []spinitron.Event, shows map[str
 		}
 	}
 	return v
-}
-
-// scheduleSlotRe matches Spinitron schedule lines such as
-// "Every week on Mon, Tue, Wed, Thu at 6:00 PM".
-var scheduleSlotRe = regexp.MustCompile(`on ((?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)(?:, | and | & )?)+) at (\d{1,2}):(\d{2}) ?([AP]M)`)
-
-var dayRe = regexp.MustCompile(`Mon|Tue|Wed|Thu|Fri|Sat|Sun`)
-
-var weekOrder = map[string]int{"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
-
-// scheduleSortKey orders shows by their earliest weekly slot, Monday first,
-// as minutes into the week. It returns -1 if the schedule can't be parsed.
-func scheduleSortKey(schedule string) int {
-	best := -1
-	for _, m := range scheduleSlotRe.FindAllStringSubmatch(schedule, -1) {
-		h, _ := strconv.Atoi(m[2])
-		mins, _ := strconv.Atoi(m[3])
-		h %= 12
-		if m[4] == "PM" {
-			h += 12
-		}
-		for _, d := range dayRe.FindAllString(m[1], -1) {
-			if k := weekOrder[d]*24*60 + h*60 + mins; best < 0 || k < best {
-				best = k
-			}
-		}
-	}
-	return best
 }
 
 // artView is what the "art" template needs to draw a show's artwork.

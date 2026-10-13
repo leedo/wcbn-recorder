@@ -9,7 +9,7 @@
 <div class="section-head" id="add-shows">
   <h2>Add shows</h2>
   <div class="controls" id="browse-controls">
-    <input type="search" id="q" placeholder="Search {{len .Shows}} shows, DJs, descriptions…" autocomplete="off" aria-label="Search shows">
+    <input type="search" id="q" placeholder="Search {{len .Shows}} shows and DJs…" autocomplete="off" aria-label="Search shows">
     <select id="category" aria-label="Category">
       <option value="">All categories</option>
       {{range .Categories}}<option value="{{lower .}}">{{.}}</option>{{end}}
@@ -21,29 +21,25 @@
 <table>
   <thead><tr>
     <th aria-sort="ascending"><button type="button" class="sort" data-col="0">Show</button></th>
-    <th aria-sort="none"><button type="button" class="sort" data-col="1">DJ</button></th>
-    <th aria-sort="none"><button type="button" class="sort" data-col="2">Category</button></th>
-    <th aria-sort="none"><button type="button" class="sort" data-col="3" data-type="number">Schedule</button></th>
-    <th aria-sort="none"><button type="button" class="sort" data-col="4" data-type="number">Next airing</button></th>
+    <th aria-sort="none"><button type="button" class="sort" data-col="1">Category</button></th>
+    <th aria-sort="none"><button type="button" class="sort" data-col="2" data-type="number">Next airing</button></th>
     <th class="add-col">Add</th>
   </tr></thead>
   <tbody>
   {{range .Shows}}
   <tr id="show-{{.ID}}" class="{{if .Record}}selected{{end}} {{if not .OnCalendar}}off{{end}}"
-      data-search="{{lower .Title}} {{lower .DJ}} {{lower .Description}}" data-category="{{lower .Category}}">
+      data-search="{{lower .Title}} {{lower .DJ}}" data-category="{{lower .Category}}">
     <td class="title" data-sort="{{lower .Title}}">
       <div class="title-row">
       {{template "art" (art .Image $.StationLogo "art-sm" true)}}
       <div>
       {{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>{{else}}<strong>{{.Title}}</strong>{{end}}
        <span class="tag rec rec-tag"{{if not .RecordingNow}} hidden{{end}}>● recording</span>
-      {{with .Description}}<details><summary>Description</summary><p>{{.}}</p></details>{{end}}
+      {{with .DJ}}<div class="sub muted">with {{.}}</div>{{end}}
       </div>
       </div>
     </td>
-    <td data-sort="{{lower .DJ}}">{{.DJ}}</td>
     <td data-sort="{{lower .Category}}">{{.Category}}</td>
-    <td class="sched muted" data-sort="{{if ge .ScheduleKey 0}}{{.ScheduleKey}}{{end}}">{{.Schedule}}</td>
     <td class="nowrap" data-sort="{{if .OnCalendar}}{{.NextAiring.Unix}}{{end}}">
       {{if .OnCalendar}}{{when .NextAiring}}{{else}}
         <span class="muted">Not on this week's schedule</span>
