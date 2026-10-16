@@ -1,10 +1,9 @@
-// Package id3 writes ID3v2.4 tags: text frames, comments, URLs, chapters with
-// a table of contents, and cover pictures.
+// Package id3 writes ID3v2.4 tags: text frames, comments, URLs and cover
+// pictures.
 package id3
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"io"
 )
@@ -59,36 +58,6 @@ func (t *Tag) UserURL(desc, u string) {
 	if u != "" {
 		t.frames.Write(id3Frame("WXXX", fmt.Appendf(nil, "%c%s\x00%s", id3UTF8, desc, u)))
 	}
-}
-
-type Chapter struct {
-	StartMs, EndMs int64
-	Title          string
-}
-
-// MaxChapters is the most a CTOC frame can list (its entry count is one byte).
-const MaxChapters = 255
-
-// chapters adds CHAP frames (http://id3.org/id3v2-chapters-1.0) and the
-// top-level CTOC frame that lets players list them in order.
-func (t *Tag) Chapters(chs []Chapter) {
-	if len(chs) == 0 {
-		return
-	}
-	chs = chs[:min(len(chs), MaxChapters)]
-	toc := []byte("toc\x00")
-	toc = append(toc, 0x03, byte(len(chs))) // flags: top-level, ordered
-	for i, c := range chs {
-		id := fmt.Sprintf("ch%d", i)
-		body := append([]byte(id), 0)
-		body = binary.BigEndian.AppendUint32(body, uint32(c.StartMs))
-		body = binary.BigEndian.AppendUint32(body, uint32(c.EndMs))
-		body = append(body, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff) // byte offsets unused
-		body = append(body, id3Frame("TIT2", textBody(c.Title))...)
-		t.frames.Write(id3Frame("CHAP", body))
-		toc = append(append(toc, id...), 0)
-	}
-	t.frames.Write(id3Frame("CTOC", toc))
 }
 
 func (t *Tag) WriteTo(w io.Writer) (int64, error) {

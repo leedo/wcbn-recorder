@@ -27,11 +27,39 @@ var templateFS embed.FS
 const (
 	liveInterval      = time.Second      // how often the page's event streams check for progress
 	keepAliveInterval = 30 * time.Second // the longest an event stream goes without sending anything
-	upcomingWindow    = 48 * time.Hour   // how far ahead the Upcoming page lists recordings
+	upcomingWindow    = 48 * time.Hour   // how far ahead the Upcoming list goes, unless it would be empty
+	recordingsPerPage = 10               // on the Recordings page
 )
 
 //go:embed favicon.png
 var favicon []byte
+
+// The icons for an iPhone's or Android's home screen: the logo on white,
+// with room around it for the rounded corners (iOS fills a transparent icon
+// with black).
+var (
+	//go:embed touch-icon-180.png
+	touchIcon []byte
+	//go:embed touch-icon-512.png
+	touchIconLarge []byte
+)
+
+// manifest describes the app, for adding it to a home screen: it opens on
+// the Recordings page in its own window, without the browser's bars.
+const manifest = `{
+  "name": "WCBN Recorder",
+  "short_name": "WCBN",
+  "start_url": "/recordings",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fafaf8",
+  "theme_color": "#fafaf8",
+  "icons": [
+    {"src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png"},
+    {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"}
+  ]
+}
+`
 
 type jobView struct {
 	ShowID     int64
@@ -48,32 +76,34 @@ type showView struct {
 }
 
 type pageData struct {
-	RefreshErr  string
-	Recording   []liveStatus
-	Live        *liveStatus // the recording on the live card; see liveRecording
-	Upcoming    []jobView
-	Shows       []showView // every known show, for the Shows page
-	Categories  []string
-	Selected    int
-	StationLogo string     // fallback artwork
-	OnAir       *onAirView // what's on, when nothing is recording
-	Player      playerView
+	RefreshErr   string
+	Recording    []liveStatus
+	Live         *liveStatus // the recording on the live card; see liveRecording
+	Upcoming     []jobView
+	Shows        []showView // every known show, for the Shows page
+	Categories   []string
+	Selected     int
+	StationLogo  string     // fallback artwork
+	SongsChanged int64      // see App.songsChanged
+	OnAir        *onAirView // what's on, when nothing is recording
+	Player       playerView
 }
 
 // layoutData is what layout.html draws every page with. Page names the
-// template for the page's contents ("home", "recordings"), which gets Data.
+// template for the page's contents ("recordings", "shows"), which gets Data.
 // Live is for the live card and player bar at the top of every page.
 type layoutData struct {
 	Page  string
-	Title string // for <title>; empty for the home page
+	Title string // for <title>, before the app's name
 	Live  pageData
 	Data  any
 }
 
 // playerView is the player bar, the compact form of the live card: the show
-// being recorded, or on the air, and its current song.
+// being recorded, or on the air, or played back, and its current song.
 type playerView struct {
 	Recording   bool
+	Playback    bool // a recording played back; the page script fills in the song
 	Title       string
 	DJ          string
 	Image       string
@@ -89,20 +119,67 @@ type recordingView struct {
 	OwnFolder  bool // Delete removes its folder, not just its files; see ownsFolder
 }
 
+// showRowView is a show's row on the Shows page.
+type showRowView struct {
+	Show        showView
+	StationLogo string
+}
+
+// showsData is the Shows page: the shows being recorded ("Your shows"), and
+// the rest, to add, both by next airing (those off the schedule last, by
+// title), as the page starts them.
+type showsData struct {
+	pageData
+	Mine, Others []showView
+}
+
+func newShowsData(data pageData) showsData {
+	d := showsData{pageData: data}
+	for _, sh := range data.Shows {
+		if sh.Record {
+			d.Mine = append(d.Mine, sh)
+		} else {
+			d.Others = append(d.Others, sh)
+		}
+	}
+	byNextAiring := func(a, b showView) int {
+		if a.OnCalendar != b.OnCalendar {
+			if a.OnCalendar {
+				return -1
+			}
+			return 1
+		}
+		if c := a.NextAiring.Compare(b.NextAiring); c != 0 && a.OnCalendar {
+			return c
+		}
+		return strings.Compare(strings.ToLower(a.Title), strings.ToLower(b.Title))
+	}
+	slices.SortStableFunc(d.Mine, byNextAiring)
+	slices.SortStableFunc(d.Others, byNextAiring)
+	return d
+}
+
 type recordingsData struct {
+	Upcoming   pageData // for the upcoming list above the recordings
 	Recordings []recordingView
+	Pager      pager
 	State      string // see recordingsState
 }
 
-// recordingsState sums up the recordings in progress, so the Recordings page
-// can tell from the event stream when to redraw its list: when one starts,
-// is ended, or finishes saving.
-func recordingsState(active []liveStatus) string {
+// recordingsState sums up the recordings in progress, and songs, the count
+// of changes to recordings' songs and artist links (App.songsChanged), so the
+// Recordings and details pages can tell from the event stream when to redraw:
+// when a recording starts, is ended, or finishes saving, or its songs change.
+func recordingsState(active []liveStatus, songs int64) string {
 	var parts []string
 	for _, st := range active {
 		parts = append(parts, fmt.Sprintf("%d:%t", st.ID, st.Finishing || st.Stopped))
 	}
-	return strings.Join(parts, ",")
+	state := strings.Join(parts, ",")
+	if songs > 0 {
+		state += fmt.Sprintf(" songs:%d", songs)
+	}
+	return state
 }
 
 type logsData struct {
@@ -113,12 +190,21 @@ type logsData struct {
 
 func (a *App) Handler() http.Handler {
 	tmpl := template.Must(template.New("").Funcs(template.FuncMap{
-		"when":    func(t time.Time) string { return t.In(a.cfg.Location).Format("Mon Jan 2, 3:04 PM") },
-		"clock":   func(t time.Time) string { return t.In(a.cfg.Location).Format("3:04 PM") },
+		"when":  func(t time.Time) string { return t.In(a.cfg.Location).Format("Mon Jan 2, 3:04 PM") },
+		"clock": func(t time.Time) string { return t.In(a.cfg.Location).Format("3:04 PM") },
+		"slot":  func(start, end time.Time) string { return timeRange(start.In(a.cfg.Location), end.In(a.cfg.Location)) },
+		"aired": func(start, end time.Time) string {
+			return airedRange(start.In(a.cfg.Location), end.In(a.cfg.Location), time.Now().In(a.cfg.Location))
+		},
 		"lower":   strings.ToLower,
 		"art":     artImage,
 		"dur":     formatDuration,
 		"mb":      func(n int64) string { return fmt.Sprintf("%.1f MB", float64(n)/1e6) },
+		"kbps":    kbps,
+		"size":    fileSize,
+		"showRow": func(sh showView, logo string) showRowView { return showRowView{sh, logo} },
+		"credit":  a.credit,
+		"add":     func(a, b int) int { return a + b },
 		"logtime": func(t time.Time) string { return t.In(a.cfg.Location).Format("Jan 2 3:04:05 PM") },
 		"iso":     func(t time.Time) string { return t.Format(time.RFC3339) },
 	}).ParseFS(templateFS, "templates/*.html"))
@@ -129,18 +215,26 @@ func (a *App) Handler() http.Handler {
 		w.Header().Set("Cache-Control", "max-age=86400")
 		w.Write(favicon)
 	})
+	for path, icon := range map[string][]byte{"/apple-touch-icon.png": touchIcon, "/icon-512.png": touchIconLarge} {
+		mux.HandleFunc("GET "+path, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "image/png")
+			w.Header().Set("Cache-Control", "max-age=86400")
+			w.Write(icon)
+		})
+	}
+	mux.HandleFunc("GET /manifest.webmanifest", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/manifest+json")
+		w.Header().Set("Cache-Control", "max-age=3600")
+		io.WriteString(w, manifest)
+	})
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("add") == "1" {
 			// The show list used to be on the home page, opened with ?add=1.
 			http.Redirect(w, r, "/shows#add-shows", http.StatusMovedPermanently)
 			return
 		}
-		data, err := a.pageData(r.Context())
-		if err != nil {
-			httpError(w, err)
-			return
-		}
-		render(w, tmpl, "layout", layoutData{Page: "home", Live: data, Data: data})
+		// Upcoming recordings are on the Recordings page.
+		http.Redirect(w, r, "/recordings", http.StatusFound)
 	})
 	mux.HandleFunc("GET /shows", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("add") == "1" {
@@ -153,7 +247,7 @@ func (a *App) Handler() http.Handler {
 			httpError(w, err)
 			return
 		}
-		render(w, tmpl, "layout", layoutData{Page: "shows", Title: "Shows", Live: data, Data: data})
+		render(w, tmpl, "layout", layoutData{Page: "shows", Title: "Shows", Live: data, Data: newShowsData(data)})
 	})
 	mux.HandleFunc("GET /recordings", func(w http.ResponseWriter, r *http.Request) {
 		data, err := a.pageData(r.Context()) // for the live card
@@ -161,23 +255,40 @@ func (a *App) Handler() http.Handler {
 			httpError(w, err)
 			return
 		}
-		recs, err := a.store.Recordings(r.Context())
+		page := recordingsData{Upcoming: data, State: recordingsState(data.Recording, data.SongsChanged)}
+		if page.Recordings, page.Pager, err = a.recordingsList(r, 0, data.Recording, "/recordings", "recorded"); err != nil {
+			httpError(w, err)
+			return
+		}
+		render(w, tmpl, "layout", layoutData{Page: "recordings", Title: "Recordings", Live: data, Data: page})
+	})
+	// A show's details and recordings.
+	mux.HandleFunc("GET /shows/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if page, ok := a.showPage(w, r); ok {
+			render(w, tmpl, "layout", page)
+		}
+	})
+	// A recording's details: its airing, files and songs.
+	mux.HandleFunc("GET /recordings/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		data, err := a.pageData(r.Context()) // for the live card
 		if err != nil {
 			httpError(w, err)
 			return
 		}
-		active := map[int64]liveStatus{}
-		for _, st := range data.Recording {
-			active[st.ID] = st
+		d, err := a.recordingDetails(r.Context(), id, data.Recording)
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		} else if err != nil {
+			httpError(w, err)
+			return
 		}
-		page := recordingsData{State: recordingsState(data.Recording)}
-		for _, rec := range recs {
-			st, inProgress := active[rec.ID]
-			page.Recordings = append(page.Recordings, recordingView{
-				Recording: rec, InProgress: inProgress, Ending: st.Finishing || st.Stopped, OwnFolder: ownsFolder(rec.Dir),
-			})
-		}
-		render(w, tmpl, "layout", layoutData{Page: "recordings", Title: "Recordings", Live: data, Data: page})
+		render(w, tmpl, "layout", layoutData{Page: "recording", Title: d.Title, Live: data, Data: d})
 	})
 	// liveJSON renders the parts of the page that change on their own.
 	liveJSON := func(ctx context.Context) ([]byte, error) {
@@ -208,7 +319,7 @@ func (a *App) Handler() http.Handler {
 		}
 		return json.Marshal(map[string]any{
 			"player": player.String(), "live": live.String(), "upcoming": upcoming.String(),
-			"recording": len(data.Recording), "selectedShows": selectedShows, "recordingShows": recordingShows, "recordings": recordingsState(data.Recording),
+			"recording": len(data.Recording), "selectedShows": selectedShows, "recordingShows": recordingShows, "recordings": recordingsState(data.Recording, data.SongsChanged),
 			"refreshErr": data.RefreshErr,
 		})
 	}
@@ -314,6 +425,9 @@ func (a *App) Handler() http.Handler {
 	// Listen to the station, through the shared connection; the same stream
 	// whether or not anything is being recorded.
 	mux.HandleFunc("GET /listen", a.serveListen)
+	// Play back a finished recording in the live card (see playback.go).
+	mux.HandleFunc("GET /recordings/{id}/play", a.servePlay(tmpl))
+	mux.HandleFunc("GET /recordings/{id}/audio", a.serveRecordingAudio)
 	// End a recording early; what's been recorded is saved, and the show stays
 	// selected for future airings.
 	mux.HandleFunc("POST /recordings/{id}/stop", func(w http.ResponseWriter, r *http.Request) {
@@ -329,8 +443,11 @@ func (a *App) Handler() http.Handler {
 			return
 		}
 		target := "/"
-		if r.FormValue("from") == "recordings" {
+		switch r.FormValue("from") {
+		case "recordings":
 			target = "/recordings"
+		case "details":
+			target = "/recordings/" + r.PathValue("id")
 		}
 		http.Redirect(w, r, target, http.StatusSeeOther)
 	})
@@ -379,8 +496,12 @@ func (a *App) Handler() http.Handler {
 		}
 		a.notify()
 		if !wantsJSON(r) {
-			// Without JS, go back to the show in the list.
-			http.Redirect(w, r, fmt.Sprintf("/shows#show-%d", id), http.StatusSeeOther)
+			// Without JS, go back to the show in the list, or its page.
+			target := fmt.Sprintf("/shows#show-%d", id)
+			if r.FormValue("from") == "show" {
+				target = fmt.Sprintf("/shows/%d", id)
+			}
+			http.Redirect(w, r, target, http.StatusSeeOther)
 			return
 		}
 		// Send back the re-rendered upcoming list so the page can update in place.
@@ -456,7 +577,7 @@ func (a *App) pageData(ctx context.Context) (pageData, error) {
 	for _, rec := range a.active {
 		active = append(active, rec.status(now))
 	}
-	data := pageData{StationLogo: stationLogo}
+	data := pageData{StationLogo: stationLogo, SongsChanged: a.songsChanged.Load()}
 	if a.refreshErr != nil {
 		data.RefreshErr = a.refreshErr.Error()
 	}
@@ -520,14 +641,30 @@ func (a *App) pageData(ctx context.Context) (pageData, error) {
 		}
 		data.Recording = append(data.Recording, st)
 	}
+	var nextJob []jobView // the next one, whenever it is
 	for _, j := range jobs {
-		if !started[j.Event.Key()] && j.Event.Start.Before(now.Add(upcomingWindow)) {
-			data.Upcoming = append(data.Upcoming, view(j))
+		if started[j.Event.Key()] {
+			continue
 		}
+		if j.Event.Start.Before(now.Add(upcomingWindow)) {
+			data.Upcoming = append(data.Upcoming, view(j))
+		} else if nextJob == nil {
+			nextJob = []jobView{view(j)}
+		}
+	}
+	if data.Upcoming == nil {
+		data.Upcoming = nextJob // nothing in the next two days: the next one instead
 	}
 	data.Live = liveRecording(data.Recording, now)
 	if data.Live == nil {
 		data.OnAir = a.onAir(ctx, events, ids, now)
+	}
+	// The live card links the artist playing to Wikipedia, once looked up.
+	switch {
+	case data.Live != nil && data.Live.Current != nil:
+		a.wantArtists(ctx, data.Live.Current.Artist)
+	case data.OnAir != nil:
+		a.wantArtists(ctx, data.OnAir.Artist)
 	}
 	data.Player = data.player()
 	return data, nil
@@ -622,6 +759,56 @@ func formatDuration(ms int64) string {
 
 func wantsJSON(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), "application/json")
+}
+
+// timeRange is a show's time slot, short: "7 – 8 PM", "7:30 – 9 PM",
+// "11 AM – 1 PM". Whole hours drop their ":00", and AM or PM is said once
+// when both times share it.
+func timeRange(start, end time.Time) string {
+	short := func(t time.Time) string {
+		if t.Minute() == 0 {
+			return t.Format("3")
+		}
+		return t.Format("3:04")
+	}
+	if start.Format("PM") == end.Format("PM") {
+		return short(start) + " – " + short(end) + " " + end.Format("PM")
+	}
+	return short(start) + " " + start.Format("PM") + " – " + short(end) + " " + end.Format("PM")
+}
+
+// airedRange is when a show aired: its day and timeRange ("Tue Oct 13,
+// 7 – 8 PM"), or just the time range if it aired today, as of now.
+func airedRange(start, end, now time.Time) string {
+	if y, m, d := start.Date(); y == now.Year() && m == now.Month() && d == now.Day() {
+		return timeRange(start, end)
+	}
+	return start.Format("Mon Jan 2, ") + timeRange(start, end)
+}
+
+// fileSize is a size in bytes, in the unit that suits it: "300 bytes",
+// "12.3 KB", "140.3 MB" (decimal units, as for recordings' sizes).
+func fileSize(n int64) string {
+	switch {
+	case n < 1000:
+		if n == 1 {
+			return "1 byte"
+		}
+		return fmt.Sprintf("%d bytes", n)
+	case n < 1_000_000:
+		return fmt.Sprintf("%.1f KB", float64(n)/1e3)
+	default:
+		return fmt.Sprintf("%.1f MB", float64(n)/1e6)
+	}
+}
+
+// kbps is the average bitrate of audio of n bytes lasting ms, rounded, or 0
+// if it has no length.
+func kbps(n, ms int64) int64 {
+	if ms <= 0 {
+		return 0
+	}
+	return (n*8 + ms/2) / ms // bits per ms is kilobits per second
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

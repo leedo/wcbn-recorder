@@ -51,7 +51,7 @@ func TestDeleteRecording(t *testing.T) {
 	dest := app.cfg.Destination
 	const dir = "Train To Skaville/Train To Skaville - 2026-10-06"
 
-	// A song folder goes, with every recording in it (here a resumed airing),
+	// An older recording's song folder goes, with every recording in it,
 	// and then the program folder, now empty.
 	first := addRecording(t, app, dir, dir+"/.Train To Skaville - 2026-10-06.mp3", dir+"/01 - Toots - Pressure Drop.mp3", dir+"/cover.jpg")
 	addRecording(t, app, dir, dir+"/.Train To Skaville - 2026-10-06 2.mp3")
@@ -70,11 +70,13 @@ func TestDeleteRecording(t *testing.T) {
 		t.Errorf("another recording's files were touched: %v", err)
 	}
 
-	// With song files off, the folder is the program folder, shared with other
-	// recordings: only the recording's own files go.
+	// A recording's folder is the program folder, shared with other
+	// recordings: only the recording's own files go, along with those of a
+	// run that resumed it.
 	solo := addRecording(t, app, "Club H", "Club H/Train To Skaville - 2026-10-06.mp3", "Club H/.Train To Skaville - 2026-10-06.cue")
-	keep := filepath.Join(dest, "Club H/Club H - 2026-10-13.mp3")
-	os.WriteFile(keep, []byte("x"), 0o644)
+	for _, name := range []string{"Train To Skaville - 2026-10-06 2.mp3", ".Train To Skaville - 2026-10-06 2.cue", "Club H - 2026-10-13.mp3"} {
+		os.WriteFile(filepath.Join(dest, "Club H", name), []byte("x"), 0o644)
+	}
 	if n, err := app.deleteRecording(ctx, solo); err != nil || n != 1 {
 		t.Fatalf("deleted %d, %v", n, err)
 	}
@@ -98,8 +100,7 @@ func TestDeleteRecording(t *testing.T) {
 		t.Errorf("outside file: %v", err)
 	}
 
-	// A recording in progress can't be deleted, nor can a folder one is
-	// still writing to.
+	// A recording in progress can't be deleted.
 	f := newFakeRecording(t, testConfig())
 	f.cfg.Destination = dest
 	f.catalogID = other
@@ -108,11 +109,6 @@ func TestDeleteRecording(t *testing.T) {
 	app.mu.Unlock()
 	if _, err := app.deleteRecording(ctx, other); !errors.Is(err, errInProgress) {
 		t.Errorf("deleting a recording in progress: %v", err)
-	}
-	f.catalogID = 999
-	f.out = outputPaths(f.cfg, filepath.Join(dest, "Yazoo City Calling"), "Yazoo City Calling - 2026-10-07")
-	if _, err := app.deleteRecording(ctx, other); !errors.Is(err, errInProgress) {
-		t.Errorf("deleting a folder being recorded into: %v", err)
 	}
 }
 
@@ -135,17 +131,19 @@ func TestWebRecordingActions(t *testing.T) {
 	app.active[f.job.Event.Key()] = f.recording
 	app.mu.Unlock()
 
-	page := get(t, srv.URL+"/recordings")
-	for _, want := range []string{
-		fmt.Sprintf(`action="/recordings/%d/stop" class="stop-form"`, live),
-		fmt.Sprintf(`action="/recordings/%d/delete" class="rec-delete-form"`, done),
-		`data-own-folder="true"`, fmt.Sprintf(`data-state="%d:false"`, live),
-	} {
-		if !strings.Contains(page, want) {
-			t.Errorf("recordings page missing %q", want)
-		}
+	// End recording and Delete are on each recording's details page, not the
+	// list, which has only Play, for finished ones.
+	if page := mainOf(get(t, srv.URL+"/recordings")); strings.Contains(page, "<form") || strings.Count(page, "<button") != strings.Count(page, `class="listen play-rec"`) || !strings.Contains(page, fmt.Sprintf(`data-state="%d:false"`, live)) {
+		t.Error("the list should have only Play buttons")
 	}
-	if strings.Contains(page, fmt.Sprintf("/recordings/%d/delete", live)) || strings.Contains(page, fmt.Sprintf("/recordings/%d/stop", done)) {
+	livePage, donePage := get(t, fmt.Sprintf("%s/recordings/%d", srv.URL, live)), get(t, fmt.Sprintf("%s/recordings/%d", srv.URL, done))
+	if !strings.Contains(livePage, fmt.Sprintf(`action="/recordings/%d/stop" class="stop-form"`, live)) || !strings.Contains(livePage, `name="from" value="details"`) {
+		t.Error("no End recording on the details page of one in progress")
+	}
+	if !strings.Contains(donePage, fmt.Sprintf(`action="/recordings/%d/delete" class="rec-delete-form" data-id="%d" data-then="/recordings"`, done, done)) || !strings.Contains(donePage, `data-own-folder="true"`) {
+		t.Error("no Delete on the details page of a finished one")
+	}
+	if strings.Contains(livePage, "/delete") || strings.Contains(donePage, "/stop") {
 		t.Error("only finished recordings can be deleted, and only ones in progress ended")
 	}
 
@@ -171,10 +169,21 @@ func TestWebRecordingActions(t *testing.T) {
 	if resp := post(fmt.Sprintf("/recordings/%d/delete", done), nil); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("deleting it again: %s", resp.Status)
 	}
-	if resp := post(fmt.Sprintf("/recordings/%d/stop", live), url.Values{"from": {"recordings"}}); resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/recordings" {
+	if resp := post(fmt.Sprintf("/recordings/%d/stop", live), url.Values{"from": {"details"}}); resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != fmt.Sprintf("/recordings/%d", live) {
 		t.Errorf("end: %s %s", resp.Status, resp.Header.Get("Location"))
 	}
 	if page := get(t, srv.URL+"/recordings"); !strings.Contains(page, `<span class="tag">saving</span>`) || !strings.Contains(page, fmt.Sprintf(`data-state="%d:true"`, live)) {
-		t.Error("an ended recording should show as saving, with no buttons")
+		t.Error("an ended recording should show as saving")
 	}
+	if page := mainOf(get(t, fmt.Sprintf("%s/recordings/%d", srv.URL, live))); !strings.Contains(page, `<span class="tag">saving</span>`) || strings.Contains(page, "<form") || strings.Contains(page, "<button") {
+		t.Error("an ended recording's details page should show it as saving, with no buttons")
+	}
+}
+
+// mainOf is a page's <main>: its own content, without the live card and
+// player bar every page has.
+func mainOf(page string) string {
+	_, rest, _ := strings.Cut(page, "<main")
+	main, _, _ := strings.Cut(rest, "</main>")
+	return main
 }

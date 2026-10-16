@@ -1,6 +1,6 @@
 // Package recorder records selected WCBN shows from the live stream: it runs
-// the scheduler, streams audio to disk, writes the tagged show and song files,
-// and serves the web UI.
+// the scheduler, streams audio to disk, writes each show as a tagged MP3 with
+// a CUE sheet, and serves the web UI.
 package recorder
 
 import (
@@ -41,15 +41,15 @@ type Job struct {
 type trackMark struct {
 	ms     int64     // position in the recording
 	offset int64     // byte offset in the audio; always on a frame boundary
-	lead   int64     // offset up to OverlapFrames earlier, where a gapless song file starts
 	at     time.Time // when the title changed
 	title  string    // the stream title with " on <show> with <dj>" removed
 }
 
 type recording struct {
 	cfg       *config.Config
-	db        *store.Store // lists the recording and its songs; nil for none
-	catalogID int64        // the recording's row in db; 0 if it isn't in one
+	db        *store.Store    // lists the recording and its songs; nil for none
+	catalogID int64           // the recording's row in db; 0 if it isn't in one
+	earlier   store.Recording // the row as a resumed airing found it; ID 0 if this run added it
 	job       Job
 	out       outputs
 	part      string
@@ -66,30 +66,25 @@ type recording struct {
 	lastErr    string
 	reconnects int
 	finishing  bool
-	cancel     func()       // stops Run; set once Run starts
-	stopped    bool         // ended early from the UI
-	resumed    bool         // continuing an earlier recording of the same airing
-	songBase   int          // songs already in the folder from that recording
-	songCount  int          // songs queued for writing, including songBase
-	songsSaved map[int]bool // song numbers written to files
+	cancel     func() // stops Run; set once Run starts
+	stopped    bool   // ended early from the UI
+	resumed    bool   // continuing an earlier recording of the same airing
 
-	// Song files are written by a background goroutine as songs finish.
-	songs      chan segment
-	songsDone  chan struct{}
-	songsOnce  sync.Once
-	songErrors int // written only by the song writer
-
-	infoOnce  sync.Once
-	info      spinitron.ShowInfo // from the show's Spinitron page, fetched once
-	art       *artwork           // the show's image, if any; fetched with info
-	coverOnce sync.Once
+	infoOnce sync.Once
+	info     spinitron.ShowInfo // from the show's Spinitron page, fetched once
+	art      *artwork           // the show's image, if any; fetched with info
 
 	showOut, cueOut string // the show file and CUE sheet written, if any
+	// merged is set when this run's audio was added to the earlier run's show
+	// file (see mergeShowFile), after prefixMs (prefixBytes) of earlier audio
+	// and silence.
+	merged                bool
+	prefixMs, prefixBytes int64
 }
 
 // Record streams the live program to disk until job.Until (or ctx is
-// cancelled), then writes the tagged show file and/or one file per song. It
-// lists the recording in db, if that isn't nil.
+// cancelled), then writes the tagged show file and CUE sheet. It lists the
+// recording in db, if that isn't nil.
 func Record(ctx context.Context, cfg *config.Config, db *store.Store, job Job) error {
 	rec, err := startRecording(cfg, db, job)
 	if err != nil {
@@ -107,11 +102,8 @@ func startRecording(cfg *config.Config, db *store.Store, job Job) (*recording, e
 	}
 	date := job.Event.Start.In(cfg.Location)
 	airing := job.Event.Key()
-	base, resume := chooseBase(cfg, dir, sanitize(fmt.Sprintf("%s - %s", job.Event.Title, date.Format("2006-01-02"))), date.Format("1504"), airing)
-	out := outputPaths(cfg, dir, base)
-	if err := os.MkdirAll(filepath.Dir(out.part), 0o755); err != nil {
-		return nil, err
-	}
+	base, resume := chooseBase(dir, sanitize(fmt.Sprintf("%s - %s", job.Event.Title, date.Format("2006-01-02"))), date.Format("1504"), airing)
+	out := outputPaths(dir, base)
 	if err := os.WriteFile(markerPath(out), []byte(airing+"\n"), 0o644); err != nil {
 		return nil, err
 	}
@@ -122,11 +114,6 @@ func startRecording(cfg *config.Config, db *store.Store, job Job) (*recording, e
 		return nil, err
 	}
 	rec := &recording{cfg: cfg, db: db, job: job, out: out, part: part, file: f, started: time.Now(), audio: mpeg.NewFrameWriter(f), resumed: resume}
-	if resume && cfg.TrackFiles {
-		// Carry on the song numbering and playlist of the earlier recording.
-		rec.songBase = lastSongNumber(out.trackDir)
-		rec.songCount = rec.songBase
-	}
 	rec.catalogStart(context.Background()) // before anything else sees rec, so catalogID needs no lock
 	return rec, nil
 }
@@ -139,7 +126,7 @@ func (r *recording) Run(ctx context.Context) error {
 	if r.resumed {
 		verb = "resuming"
 	}
-	log.Printf("%s %q until %s -> %s", verb, job.Event.Title, job.Until.In(r.cfg.Location).Format(time.Kitchen), out.trackDir)
+	log.Printf("%s %q until %s -> %s", verb, job.Event.Title, job.Until.In(r.cfg.Location).Format(time.Kitchen), out.showFile)
 	recCtx, cancel := context.WithDeadline(ctx, job.Until)
 	defer cancel()
 	r.mu.Lock()
@@ -149,7 +136,6 @@ func (r *recording) Run(ctx context.Context) error {
 	}
 	r.mu.Unlock()
 	go stopAtWallTime(recCtx, job.Until, cancel)
-	r.startSongWriter(context.WithoutCancel(ctx))
 	backoff := time.Second
 	for recCtx.Err() == nil {
 		before := r.bytesWritten()
@@ -181,12 +167,10 @@ func (r *recording) Run(ctx context.Context) error {
 		return err
 	}
 	if r.audio.Written() == 0 {
-		r.stopSongWriter()
 		r.catalogDiscard(context.WithoutCancel(ctx))
 		os.Remove(r.part)
 		if !r.resumed {
 			os.Remove(markerPath(out))
-			os.Remove(out.trackDir) // only if empty: nothing else was written
 		}
 		return fmt.Errorf("no audio received for %q", job.Event.Title)
 	}
@@ -204,7 +188,7 @@ func (r *recording) Run(ctx context.Context) error {
 		r.showOut = keep
 	}
 	r.catalogFinish(ctx, r.showMetadata(ctx), r.showOut, r.cueOut)
-	log.Printf("finished %q: %s (%.1f MB, %d tracks)", job.Event.Title, out.trackDir, float64(r.audio.Written())/1e6, len(r.tracks))
+	log.Printf("finished %q: %s (%.1f MB, %d tracks)", job.Event.Title, r.showOut, float64(r.audio.Written())/1e6, len(r.tracks))
 	return nil
 }
 
@@ -339,13 +323,10 @@ func (r *recording) onMetadata(meta string) {
 	if ours && dj != "" {
 		r.dj = dj
 	}
-	mark := trackMark{ms: r.audio.DurationMs(), offset: r.audio.Written(), lead: r.audio.OverlapStart(), at: time.Now(), title: track}
+	mark := trackMark{ms: r.audio.DurationMs(), offset: r.audio.Written(), at: time.Now(), title: track}
 	if len(r.tracks) == 0 {
 		// The first title covers the audio from the start of the file.
-		mark.ms, mark.offset, mark.lead = 0, 0, 0
-	}
-	if n := len(r.tracks); n > 0 {
-		r.queueSong(r.tracks[n-1], mark) // the previous song just finished
+		mark.ms, mark.offset = 0, 0
 	}
 	r.tracks = append(r.tracks, mark)
 	log.Printf("[%s] now playing: %s", r.job.Event.Title, track)

@@ -27,15 +27,6 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 type Config struct {
 	// Destination is the root folder; each program gets a subfolder.
 	Destination string `json:"destination"`
-	// ShowFile writes the whole show as one tagged MP3 with chapters.
-	ShowFile bool `json:"show_file"`
-	// TrackFiles also writes each song as its own MP3, with a playlist, in a
-	// folder named after the show and date.
-	TrackFiles bool `json:"track_files"`
-	// Gapless makes song files play back seamlessly in players that support
-	// it, by starting each file a couple of frames early and marking those
-	// samples for the player to skip (LAME/Xing "Info" header and iTunSMPB).
-	Gapless bool `json:"gapless"`
 	// Programs is an optional list of show titles to select for recording. It
 	// is imported into the database once; after that, use the web UI.
 	Programs []string `json:"programs"`
@@ -72,9 +63,6 @@ func Load(path string) (*Config, error) {
 		PostRoll:     Duration{2 * time.Minute},
 		Timezone:     "America/Detroit",
 		Listen:       "127.0.0.1:8080",
-		ShowFile:     true,
-		TrackFiles:   true,
-		Gapless:      true,
 		Database:     "wcbn-recorder.db",
 	}
 	if err := json.Unmarshal(b, cfg); err != nil {
@@ -82,9 +70,6 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Destination == "" {
 		return nil, fmt.Errorf("config: destination is required")
-	}
-	if !cfg.ShowFile && !cfg.TrackFiles {
-		return nil, fmt.Errorf("config: at least one of show_file and track_files must be true")
 	}
 	if cfg.Location, err = time.LoadLocation(cfg.Timezone); err != nil {
 		return nil, fmt.Errorf("config: timezone: %w", err)

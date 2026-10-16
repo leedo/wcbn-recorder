@@ -100,3 +100,29 @@ func TestFrameWriterChunking(t *testing.T) {
 		}
 	}
 }
+
+func TestSilentFrame(t *testing.T) {
+	// A 320 kbps, 44.1 kHz frame header with CRC and padding.
+	f, h, ok := SilentFrame([]byte{0xFF, 0xFA, 0xE2, 0x44})
+	if !ok || h.Length != 1044 || h.Samples != 1152 || h.SampleRate != 44100 || len(f) != 1044 {
+		t.Fatalf("frame %d bytes, header %+v, ok %v", len(f), h, ok)
+	}
+	if f[0] != 0xFF || f[1] != 0xFB || f[2] != 0xE0 || f[3] != 0x44 {
+		t.Errorf("header % x, want ff fb e0 44 (no CRC, no padding)", f[:4])
+	}
+	for _, b := range f[4:] {
+		if b != 0 {
+			t.Fatal("the frame isn't all zeros after its header")
+		}
+	}
+	// A FrameWriter takes a run of them as whole frames.
+	var out bytes.Buffer
+	w := NewFrameWriter(&out)
+	w.Write(bytes.Repeat(f, 10))
+	if w.Written() != 10440 || w.DurationMs() != 10*1152*1000/44100 {
+		t.Errorf("wrote %d bytes, %d ms", w.Written(), w.DurationMs())
+	}
+	if _, _, ok := SilentFrame([]byte{0, 1, 2, 3}); ok {
+		t.Error("made a frame from a non-header")
+	}
+}

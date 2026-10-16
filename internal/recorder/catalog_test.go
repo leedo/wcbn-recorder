@@ -2,6 +2,8 @@ package recorder
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,18 +44,40 @@ func TestCatalog(t *testing.T) {
 	}
 	r := recs[0]
 	base := "Club H - " + now.In(cfg.Location).Format("2006-01-02")
-	dir := "Club H/" + base
-	if r.Airing != job.Event.Key() || r.Title != "Club H" || r.DJ != "dj h" || r.Dir != dir ||
-		r.ShowFile != dir+"/."+base+".mp3" || r.CueFile != dir+"/."+base+".cue" || r.Playlist != dir+"/"+base+".m3u8" ||
-		r.FinishedAt.IsZero() || r.Bytes != rec.audio.Written() || r.DurationMs == 0 || r.Songs != 1 {
+	if r.Airing != job.Event.Key() || r.Title != "Club H" || r.DJ != "dj h" || r.Dir != "Club H" ||
+		r.ShowFile != "Club H/"+base+".mp3" || r.CueFile != "Club H/"+base+".cue" ||
+		r.FinishedAt.IsZero() || r.Bytes != rec.audio.Written() || r.DurationMs == 0 || r.Songs != 0 {
 		t.Errorf("recording: %+v", r)
 	}
-	songs, err := db.Songs(ctx, r.ID)
-	if err != nil || len(songs) != 1 {
-		t.Fatalf("songs: %+v, %v", songs, err)
+
+	// A restart resumes the airing in the same row, adding its size and length.
+	// A run that gets no audio leaves it be. Its songs are still to come from
+	// Spinitron.
+	record := func(min int64) *recording {
+		rec, err := startRecording(cfg, db, job)
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan error, 1)
+		go func() { done <- rec.Run(ctx) }()
+		for deadline := time.Now().Add(5 * time.Second); rec.bytesWritten() < min; time.Sleep(10 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatal("no audio recorded")
+			}
+		}
+		rec.Stop()
+		<-done
+		return rec
 	}
-	if s := songs[0]; s.Number != 1 || s.Title != "Club H" || s.File != dir+"/01 - Club H.mp3" || s.StartMs != 0 || s.DurationMs != r.DurationMs {
-		t.Errorf("song: %+v", s)
+	resumed := record(20 * 1044)
+	if !resumed.resumed || resumed.catalogID != r.ID {
+		t.Fatalf("resumed = %v, catalogID = %d, want %d", resumed.resumed, resumed.catalogID, r.ID)
+	}
+	record(0) // stopped before any audio
+	recs, _ = db.Recordings(ctx)
+	if len(recs) != 1 || recs[0].ID != r.ID || recs[0].Songs != 0 || recs[0].ShowFile != r.ShowFile ||
+		recs[0].Bytes != resumed.prefixBytes+resumed.audio.Written() || resumed.prefixBytes < r.Bytes || recs[0].DurationMs <= r.DurationMs {
+		t.Fatalf("after resuming: %+v", recs)
 	}
 
 	rec2, _ := startRecording(cfg, db, Job{Program: "Club H", Event: spinitron.Event{Title: "Club H 2", Start: now, End: now.Add(time.Hour)}, Until: now.Add(time.Hour)})
@@ -64,15 +88,14 @@ func TestCatalog(t *testing.T) {
 	}
 }
 
-// With song files off, the songs are still listed, as the show file's chapters.
-func TestCatalogShowFileOnly(t *testing.T) {
+// The stream's song titles aren't listed: every recording waits for its
+// songs from Spinitron, including a resumed run, which carries on in the
+// same row.
+func TestCatalogSongsPending(t *testing.T) {
 	ctx := context.Background()
 	db := testStore(t)
-	cfg := testConfig()
-	cfg.TrackFiles = false
-	f := newFakeRecording(t, cfg)
+	f := newFakeRecording(t, testConfig())
 	f.db = db
-	f.out = outputPaths(cfg, cfg.Destination, "Train To Skaville - 2026-10-13")
 	f.catalogStart(ctx)
 	f.title("Pressure Drop by Toots & the Maytals on Train To Skaville with brian tomsic")
 	f.frames(1, 5)
@@ -82,13 +105,29 @@ func TestCatalogShowFileOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.catalogFinish(ctx, f.showMetadata(ctx), f.showOut, f.cueOut)
-
 	recs, _ := db.Recordings(ctx)
-	if len(recs) != 1 || recs[0].Dir != "." || recs[0].ShowFile != "Train To Skaville - 2026-10-13.mp3" || recs[0].Playlist != "" {
+	if len(recs) != 1 || recs[0].Songs != 0 || !recs[0].SongsPending || recs[0].ShowFile != "Train To Skaville - 2026-10-13.mp3" {
 		t.Fatalf("recordings: %+v", recs)
 	}
-	songs, _ := db.Songs(ctx, recs[0].ID)
-	if len(songs) != 2 || songs[1].Number != 2 || songs[1].Artist != "The Specials" || songs[1].File != "" || songs[1].StartMs != 5*26 {
-		t.Errorf("songs: %+v", songs)
+	// The CUE sheet written at the end still comes from the stream.
+	if cue, _ := os.ReadFile(cuePath(f.showOut)); !strings.Contains(string(cue), `TITLE "A Message to You, Rudy"`) {
+		t.Errorf("CUE sheet:\n%s", cue)
+	}
+
+	g := newFakeRecording(t, testConfig())
+	g.db, g.out, g.resumed = db, f.out, true
+	g.cfg.Destination = f.cfg.Destination
+	g.catalogStart(ctx)
+	if g.catalogID != f.catalogID {
+		t.Fatalf("resumed into %d, want %d", g.catalogID, f.catalogID)
+	}
+	g.title("Monkey Man by Toots & the Maytals")
+	g.frames(3, 2)
+	if err := g.finalize(ctx, g.part, g.out); err != nil {
+		t.Fatal(err)
+	}
+	g.catalogFinish(ctx, g.showMetadata(ctx), g.showOut, g.cueOut)
+	if recs, _ := db.Recordings(ctx); len(recs) != 1 || recs[0].Songs != 0 || !recs[0].SongsPending {
+		t.Errorf("after resuming: %+v", recs)
 	}
 }

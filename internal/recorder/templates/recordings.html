@@ -1,31 +1,109 @@
-{{/* The recordings page: everything recorded, newest first, with End
-   recording for ones in progress and Delete for the rest. The page script
-   redraws it when a recording starts, ends or is saved (data-state). */}}
+{{/* The recordings page: the recordings coming up in the next two days, then
+   everything recorded, newest first, each with Play and linked to its details
+   page, which also has End recording and Delete. The page script updates the
+   upcoming list from the event stream, and redraws the recordings when one
+   starts, ends or is saved (data-state). They're shown ten at a time, with
+   links to the newer and older pages. */}}
 {{define "recordings"}}
+{{with .Upcoming.RefreshErr}}<div class="error"><strong>Couldn't load the schedule:</strong> {{.}}</div>{{end}}
+<div class="section-head"><h2>Upcoming</h2></div>
+<div class="card" id="upcoming">{{template "upcoming" .Upcoming}}</div>
+<div class="section-head" id="recorded"><h2>Recorded</h2></div>
 <div id="recordings" data-state="{{.State}}">
-{{if .Recordings}}<div class="card"><ul class="list rec-list">
-  {{range .Recordings}}<li data-key="rec-{{.ID}}">
-    <span class="time">{{when .Start}}</span>
-    <div class="show">
-      <strong>{{.Title}}</strong>{{with .DJ}} <span class="muted">with {{.}}</span>{{end}}
-      {{if .Ending}} <span class="tag">saving</span>{{else if .InProgress}} <span class="tag rec">● recording</span>{{else if .FinishedAt.IsZero}} <span class="tag" title="The recorder stopped before writing this recording's files">unfinished</span>{{end}}
-      <div class="sub muted">{{.Dir}}</div>
-    </div>
-    <div class="info muted">{{if not .InProgress}}{{dur .DurationMs}} · {{mb .Bytes}} · {{end}}{{.Songs}} song{{if ne .Songs 1}}s{{end}}</div>
-    <div class="rec-actions">
-      {{if .InProgress}}{{if not .Ending}}
-      <form method="post" action="/recordings/{{.ID}}/stop" class="stop-form" data-title="{{.Title}}">
-        <input type="hidden" name="from" value="recordings">
-        <button type="submit" class="end-rec">End recording</button>
-      </form>
-      {{end}}{{else}}
-      <form method="post" action="/recordings/{{.ID}}/delete" class="rec-delete-form"
-            data-title="{{.Title}}" data-when="{{when .Start}}" data-dir="{{.Dir}}" data-own-folder="{{.OwnFolder}}">
-        <button type="submit" class="danger" aria-label="Delete the recording of {{.Title}} from {{when .Start}}">Delete</button>
-      </form>
-      {{end}}
-    </div>
-  </li>{{end}}
-</ul></div>{{else}}<p class="empty muted">Nothing has been recorded yet.</p>{{end}}
+{{if .Recordings}}<div class="card">{{template "rec-list" .Recordings}}</div>{{else}}<p class="empty muted">Nothing has been recorded yet.</p>{{end}}
+{{template "pager" .Pager}}
 </div>
 {{end}}
+
+{{/* A recording's details page: its airing and recording facts, its files
+   and their sizes, and its songs, with Play, End recording and Delete.
+   Clicking a song's time plays the recording from it. Like
+   the list, it's redrawn when a recording starts, ends or is saved. */}}
+{{define "recording"}}
+<div id="recordings" data-state="{{.State}}">
+<p class="back"><a href="/recordings">← Recordings</a></p>
+<div class="card rec-detail">
+  <div class="rec-detail-top">
+  {{template "art" (art .Art.Image .Art.StationLogo "art-lg" false)}}
+  <div class="rec-detail-main">
+  <div class="rec-detail-head">
+    <h2>{{if .ShowID}}<a href="/shows/{{.ShowID}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
+    {{with .DJ}}<span class="muted">with {{.}}</span>{{end}}
+    {{if .Ending}}<span class="tag">saving</span>{{else if .InProgress}}<span class="tag rec">● recording</span>{{else if .FinishedAt.IsZero}}<span class="tag">unfinished</span>{{end}}
+    {{if and .SongsPending (not .InProgress)}}<span class="tag">finding songs</span>{{end}}
+    <div class="rec-detail-actions">
+      {{template "play-rec" .}}
+      {{if .InProgress}}{{if not .Ending}}
+      <form method="post" action="/recordings/{{.ID}}/stop" class="stop-form" data-title="{{.Title}}">
+        <input type="hidden" name="from" value="details">
+        <button type="submit" class="end-rec">End recording</button>
+      </form>
+      {{end}}{{end}}
+    </div>
+  </div>
+  <dl class="facts">
+    <dt>Aired</dt><dd>{{when .Start}} – {{clock .End}}</dd>
+    <dt>Recorded</dt><dd>{{when .StartedAt}}{{if not .FinishedAt.IsZero}} – {{clock .FinishedAt}}{{end}}</dd>
+    {{if not .InProgress}}<dt>Duration</dt><dd>{{dur .DurationMs}}</dd>
+    <dt>Size</dt><dd>{{mb .Bytes}}{{with kbps .Bytes .DurationMs}} · {{.}} kbps{{end}}</dd>{{end}}
+    {{with .Category}}<dt>Genre</dt><dd>{{.}}</dd>{{end}}
+    {{if or .PlaylistURL .URL}}<dt>Spinitron</dt><dd>{{with .PlaylistURL}}<a href="{{.}}" target="_blank" rel="noopener">Playlist</a>{{end}}{{if and .PlaylistURL .URL}} · {{end}}{{with .URL}}<a href="{{.}}" target="_blank" rel="noopener">Show page</a>{{end}}</dd>{{end}}
+    <dt>Folder</dt><dd class="path">{{.Dir}}</dd>
+    {{with .Description}}<dt>Description</dt><dd class="description">{{.}}</dd>{{end}}
+  </dl>
+  </div>
+  </div>
+
+  <h3>Files</h3>
+  {{if .Files}}<div class="table-wrap"><table class="details-table">
+    <thead><tr><th>Name</th><th>Kind</th><th class="num">Size</th></tr></thead>
+    <tbody>{{range .Files}}<tr><td class="path">{{.Name}}</td><td>{{.Kind}}</td><td class="num">{{if .Missing}}<span class="muted">missing</span>{{else}}{{size .Size}}{{end}}</td></tr>{{end}}</tbody>
+  </table></div>{{else}}<p class="empty muted">No files yet.</p>{{end}}
+
+  <h3>Songs</h3>
+  {{if .Songs}}<div class="table-wrap"><table class="details-table">
+    <thead><tr><th class="num">#</th><th class="num">At</th><th class="num">Length</th><th>Aired</th><th>Title</th><th>Artist</th><th>Album</th></tr></thead>
+    <tbody>{{$playable := and (not .InProgress) .ShowFile}}{{range $i, $s := .Songs}}<tr><td class="num">{{.Number}}</td>
+      <td class="num">{{if $playable}}<button type="button" class="link song-jump" data-id="{{$.ID}}" data-start="{{index $.Starts $i}}" title="Play from this song">{{dur .StartMs}}</button>{{else}}{{dur .StartMs}}{{end}}</td>
+      <td class="num">{{dur .DurationMs}}</td><td class="nowrap">{{clock .PlayedAt}}</td><td>{{.Title}}</td><td>{{template "credit" index $.Artists $i}}</td>
+      <td>{{if and .Album (or .Label .Year)}}<span class="tip" title="{{.Label}}{{if and .Label .Year}} · {{end}}{{with .Year}}{{.}}{{end}}">{{.Album}}</span>{{else}}{{.Album}}{{end}}</td></tr>{{end}}</tbody>
+  </table></div>{{else if .SongsPending}}<p class="empty muted">The songs will be filled in from the DJ's Spinitron playlist once it's up.</p>{{else}}<p class="empty muted">No songs.</p>{{end}}
+
+  {{if not .InProgress}}<div class="rec-detail-foot">
+    <form method="post" action="/recordings/{{.ID}}/delete" class="rec-delete-form" data-id="{{.ID}}" data-then="/recordings"
+          data-title="{{.Title}}" data-when="{{when .Start}}" data-dir="{{.Dir}}" data-own-folder="{{.OwnFolder}}">
+      <button type="submit" class="danger">Delete recording</button>
+    </form>
+  </div>{{end}}
+</div>
+</div>
+{{end}}
+
+{{/* Play for a finished recording: the live card's play icon, smaller. It
+   plays the recording in the live card. */}}
+{{define "play-rec"}}{{if and (not .InProgress) .ShowFile}}<button type="button" class="listen play-rec" data-id="{{.ID}}" aria-label="Play the recording of {{.Title}} from {{when .Start}}" title="Play this recording">
+  <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>
+</button>{{end}}{{end}}
+
+{{/* A list of recordings, each linked to its details page, with its status
+   and Play. */}}
+{{define "rec-list"}}<ul class="list rec-list">
+  {{range .}}<li data-key="rec-{{.ID}}">
+    <a class="rec-link" href="/recordings/{{.ID}}">
+      <span class="time">{{when .Start}}</span>
+      <span class="show"><strong>{{.Title}}</strong>{{with .DJ}} <span class="muted">with {{.}}</span>{{end}}</span>
+    </a>
+    <span class="rec-tags">
+      {{- if .Ending}}<span class="tag">saving</span>{{else if .InProgress}}<span class="tag rec">● recording</span>{{else if .FinishedAt.IsZero}}<span class="tag" title="The recorder stopped before writing this recording's files">unfinished</span>{{end -}}
+      {{if and .SongsPending (not .InProgress)}} <span class="tag" title="The songs will be filled in from the DJ's Spinitron playlist once it's up">finding songs</span>{{end -}}
+    </span>
+    {{template "play-rec" .}}
+  </li>{{end}}
+</ul>{{end}}
+
+{{/* Links to the newer and older pages of a list of recordings. */}}
+{{define "pager"}}{{if gt .Pages 1}}<nav class="pager" aria-label="Recordings pages">
+  {{if gt .Page 1}}<a href="{{.URL (add .Page -1)}}" rel="prev">← Newer</a>{{else}}<span></span>{{end}}
+  <span class="muted">Page {{.Page}} of {{.Pages}}</span>
+  {{if lt .Page .Pages}}<a href="{{.URL (add .Page 1)}}" rel="next">Older →</a>{{else}}<span></span>{{end}}
+</nav>{{end}}{{end}}

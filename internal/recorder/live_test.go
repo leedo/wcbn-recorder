@@ -39,14 +39,6 @@ func TestLiveStatus(t *testing.T) {
 	if st.Current == nil || st.Current.N != 2 || st.Current.Artist != "The Specials" || !st.Current.Current {
 		t.Errorf("current = %+v", st.Current)
 	}
-	// The finished song is saved in the background; the current one isn't.
-	waitForFiles(t, f.out.trackDir, "01 - Toots & the Maytals - Pressure Drop.mp3")
-	for deadline := time.Now().Add(5 * time.Second); f.status(time.Now()).Saved < 1 && time.Now().Before(deadline); {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if st := f.status(time.Now()); st.Saved != 1 || !st.Tracks[0].Saved || st.Tracks[1].Saved || !st.SongFiles {
-		t.Errorf("saved = %d, tracks %+v", st.Saved, st.Tracks)
-	}
 	// Progress is clamped to the scheduled slot.
 	if st := f.status(f.job.Event.End.Add(time.Minute)); st.Progress != 100 {
 		t.Errorf("progress after end = %d", st.Progress)
@@ -92,7 +84,7 @@ func TestWebLive(t *testing.T) {
 	app.mu.Unlock()
 
 	page := get(t, srv.URL+"/")
-	for _, want := range []string{`<section class="card live-card"`, "REC", "Now playing", "Pressure Drop", "Toots &amp; the Maytals", " · 320 kbps · stops at "} {
+	for _, want := range []string{`<section class="card live-card"`, `<span class="dot"></span>LIVE REC</span>`, "Now playing", "Pressure Drop", "Toots &amp; the Maytals", " · 320 kbps\n"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page missing %q", want)
 		}
@@ -192,8 +184,8 @@ func TestStopRecording(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filepath.Dir(rec.part) != rec.out.trackDir || !strings.HasPrefix(filepath.Base(rec.part), ".") {
-		t.Errorf("part file %s should be hidden in the show folder %s", rec.part, rec.out.trackDir)
+	if filepath.Dir(rec.part) != filepath.Join(cfg.Destination, "Club H") || !strings.HasPrefix(filepath.Base(rec.part), ".") {
+		t.Errorf("part file %s should be hidden in the program folder", rec.part)
 	}
 	app.mu.Lock()
 	app.active[job.Event.Key()] = rec
@@ -230,11 +222,10 @@ func TestStopRecording(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("recording didn't stop")
 	}
-	// What was recorded is saved: the whole show, and its one (untitled) song.
+	// What was recorded is saved.
 	if _, err := os.Stat(rec.out.showFile); err != nil {
 		t.Error(err)
 	}
-	waitForFiles(t, rec.out.trackDir, "01 - Club H.mp3")
 	if _, err := os.Stat(rec.part); !os.IsNotExist(err) {
 		t.Error("part file left behind")
 	}
@@ -248,8 +239,8 @@ func TestStopRecording(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("stopped-before-start recording ran")
 	}
-	if _, err := os.Stat(rec2.out.trackDir); !os.IsNotExist(err) {
-		t.Error("a recording with no audio left an empty show folder")
+	if left, _ := filepath.Glob(filepath.Join(cfg.Destination, "Club H", "*Club H 2*")); len(left) != 0 {
+		t.Errorf("a recording with no audio left %v", left)
 	}
 }
 
@@ -258,7 +249,6 @@ func TestStopRecording(t *testing.T) {
 func TestReaddAfterEnd(t *testing.T) {
 	app, srv := testApp(t)
 	app.cfg.Destination, app.cfg.StreamURL = t.TempDir(), fakeStation(t).URL
-	app.cfg.ShowFile, app.cfg.TrackFiles = true, true
 	ctx, cancel := context.WithCancel(t.Context())
 	defer func() { cancel(); app.wg.Wait() }()
 
@@ -321,9 +311,9 @@ func TestReaddAfterEnd(t *testing.T) {
 	if second == nil {
 		t.Fatal("re-adding the show didn't start recording")
 	}
-	// It's the same airing, so it resumes in the same folder.
-	if second == first || second.out.trackDir != first.out.trackDir || !second.resumed {
-		t.Errorf("second recording should resume in %q, got %q (resumed %v)", first.out.trackDir, second.out.trackDir, second.resumed)
+	// It's the same airing, so it resumes beside the same files.
+	if second == first || second.out != first.out || !second.resumed {
+		t.Errorf("second recording should resume %+v, got %+v (resumed %v)", first.out, second.out, second.resumed)
 	}
 	if _, err := os.Stat(first.out.showFile); err != nil {
 		t.Errorf("first recording's file: %v", err)
@@ -332,24 +322,26 @@ func TestReaddAfterEnd(t *testing.T) {
 	second.Stop()
 	waitFor("the second recording to finish", func() bool { return active() == nil })
 
-	// Both recordings' files are in the one folder: the songs numbered on,
-	// the playlist extended, and the second backup numbered rather than
-	// replacing the first.
-	entries, _ := os.ReadDir(first.out.trackDir)
+	// The second recording's audio is added to the first's show file, after
+	// silence for the gap, rather than written to a file of its own, and the
+	// airing's length in the database is the file's.
+	entries, _ := os.ReadDir(filepath.Dir(first.out.showFile))
 	var names []string
 	for _, e := range entries {
 		names = append(names, e.Name())
 	}
 	base := first.out.base
-	for _, want := range []string{"." + base + ".mp3", "." + base + ".cue", "." + base + " 2.mp3", "." + base + " 2.cue",
-		"01 - Train To Skaville.mp3", "02 - Train To Skaville.mp3", base + ".m3u8"} {
-		if !slices.Contains(names, want) {
-			t.Errorf("missing %q in %v", want, names)
-		}
+	if want := []string{"." + base + ".airing", base + ".cue", base + ".mp3"}; !slices.Equal(names, want) {
+		t.Errorf("files %v, want %v", names, want)
 	}
-	m3u, _ := os.ReadFile(filepath.Join(first.out.trackDir, base+".m3u8"))
-	if !strings.Contains(string(m3u), "01 - Train To Skaville.mp3\n") || !strings.Contains(string(m3u), "02 - Train To Skaville.mp3\n") {
-		t.Errorf("playlist should list both songs:\n%s", m3u)
+	if !second.merged {
+		t.Error("the second recording wasn't added to the first's file")
+	}
+	recs, _ := app.store.Recordings(t.Context())
+	fileMs, _ := audioDurationMs(first.out.showFile)
+	// (Give or take a millisecond a part, from rounding each part's length.)
+	if len(recs) != 1 || recs[0].DurationMs < fileMs-2 || recs[0].DurationMs > fileMs || recs[0].ShowFile != first.relPath(first.out.showFile) {
+		t.Errorf("recordings %+v; the file lasts %d ms", recs, fileMs)
 	}
 }
 

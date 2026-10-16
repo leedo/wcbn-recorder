@@ -1,11 +1,5 @@
-{{/* The home page: upcoming recordings. The layout is in layout.html,
-   including the live card ("live", below), which is on every page. */}}
-{{define "home"}}
-{{with .RefreshErr}}<div class="error"><strong>Couldn't load the schedule:</strong> {{.}}</div>{{end}}
-
-<div class="card" id="upcoming">{{template "upcoming" .}}</div>
-{{end}}
-
+{{/* The live card ("live", below) is on every page; the layout is in
+   layout.html. The upcoming list ("upcoming") is on the Recordings page. */}}
 {{define "live"}}
 {{if not .Live}}{{with .OnAir}}
 <section class="card live-card onair" data-key="onair">
@@ -13,10 +7,14 @@
   {{template "art" (art .Image $.StationLogo "art-lg" false)}}
   <div class="live-main">
   <div class="live-head">
-    <span class="badge">ON AIR</span>
-    <h2>{{if .ShowID}}<a href="/shows#show-{{.ShowID}}">{{.Title}}</a>{{else if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
-    {{with .DJ}}<span class="muted">with {{.}}</span>{{end}}
-    {{if not .Start.IsZero}}<span class="slot muted">{{clock .Start}} – {{clock .End}}</span>{{end}}
+    <div class="live-title">
+      <h2>{{if .ShowID}}<a href="/shows/{{.ShowID}}">{{.Title}}</a>{{else if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
+      {{with .DJ}}<span class="muted">with {{.}}</span>{{end}}
+    </div>
+    <div class="live-meta">
+      {{if not .Start.IsZero}}<span class="slot">{{slot .Start .End}}</span>{{end}}
+      <span class="badge">LIVE</span>
+    </div>
   </div>
   {{if not .Start.IsZero}}<div class="progress" role="progressbar" aria-label="Show progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Progress}}"><div style="width: {{.Progress}}%"></div></div>{{end}}
   <div class="stats muted">Not recording{{with .Bitrate}} · {{.}} kbps{{end}}{{if .Selected}} · this show is selected for recording{{end}}</div>
@@ -25,7 +23,7 @@
     <div class="now-playing">
       <span class="label">Now playing</span>
       <span class="song">{{.Song}}</span>
-      {{with .Artist}}<span class="artist">{{.}}</span>{{end}}
+      {{with .Artist}}<span class="artist">{{template "credit" (credit .)}}</span>{{end}}
     </div>
     {{else}}
     <div class="now-playing"><span class="meta">No song information from the station right now.</span></div>
@@ -44,17 +42,20 @@
   {{template "art" (art .Image $.StationLogo "art-lg" false)}}
   <div class="live-main">
   <div class="live-head">
-    {{if or .Finishing .Stopped}}<span class="badge">SAVING</span>
-    {{else if .Connected}}<span class="badge rec"><span class="dot"></span>REC</span>
-    {{else}}<span class="badge warn">RECONNECTING</span>{{end}}
-    <h2>{{if .ShowID}}<a href="/shows#show-{{.ShowID}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
-    {{with .DJ}}<span class="muted">with {{.}}</span>{{end}}
-    <span class="slot muted">{{clock .Start}} – {{clock .End}}</span>
+    <div class="live-title">
+      <h2>{{if .ShowID}}<a href="/shows/{{.ShowID}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
+      {{with .DJ}}<span class="muted">with {{.}}</span>{{end}}
+    </div>
+    <div class="live-meta">
+      <span class="slot">{{slot .Start .End}}</span>
+      {{if or .Finishing .Stopped}}<span class="badge">SAVING</span>
+      {{else if .Connected}}<span class="badge rec"><span class="dot"></span>LIVE REC</span>
+      {{else}}<span class="badge warn">RECONNECTING</span>{{end}}
+    </div>
   </div>
   <div class="progress" role="progressbar" aria-label="Show progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Progress}}"><div style="width: {{.Progress}}%"></div></div>
   <div class="stats muted">
-    Recorded {{dur .RecordedMs}} · {{mb .Bytes}}{{with .Bitrate}} · {{.}} kbps{{end}} · stops at {{clock .Until}}
-    {{if .SongFiles}} · {{.Saved}} song{{if ne .Saved 1}}s{{end}} saved{{end}}
+    Recorded {{dur .RecordedMs}} · {{mb .Bytes}}{{with .Bitrate}} · {{.}} kbps{{end}}
     {{with .Reconnects}} · {{.}} reconnect{{if gt . 1}}s{{end}}{{end}}
     {{if and (not .Connected) (not .Finishing) .LastErr}}<br>Last error: {{.LastErr}}{{end}}
   </div>
@@ -63,7 +64,7 @@
     <div class="now-playing">
       <span class="label">Now playing</span>
       <span class="song">{{.Title}}</span>
-      {{with .Artist}}<span class="artist">{{.}}</span>{{end}}
+      {{with .Artist}}<span class="artist">{{template "credit" (credit .)}}</span>{{end}}
     </div>
     {{else}}
     <div class="now-playing"><span class="meta">Waiting for song information from the stream…</span></div>
@@ -78,17 +79,68 @@
 {{end}}
 {{end}}
 
+{{/* The recordings coming up, on the Recordings page, laid out like the
+   recordings below them; each links to its show on the Shows page. */}}
 {{define "upcoming"}}
-{{if .Upcoming}}<ul class="list">
-  {{range .Upcoming}}<li><span class="time">{{when .Start}} – {{clock .End}}</span><span><a href="/shows#show-{{.ShowID}}">{{.Title}}</a>{{with .DJ}} <span class="muted">with {{.}}</span>{{end}}</span></li>{{end}}
-</ul>{{else if .Selected}}<p class="empty muted">None of your shows air in the next two days.</p>{{else}}<p class="empty muted">You're not recording any shows yet. Pick some on <a href="/shows">Shows</a>.</p>{{end}}
+{{if .Upcoming}}<ul class="list rec-list">
+  {{range .Upcoming}}<li>
+    <a class="rec-link" href="/shows/{{.ShowID}}">
+      <span class="time">{{when .Start}}</span>
+      <span class="show"><strong>{{.Title}}</strong>{{with .DJ}} <span class="muted">with {{.}}</span>{{end}}</span>
+    </a>
+  </li>{{end}}
+</ul>{{else if .Selected}}<p class="empty muted">None of your shows are on this week's schedule.</p>{{else}}<p class="empty muted">You're not recording any shows yet. Pick some on <a href="/shows">Shows</a>.</p>{{end}}
 {{end}}
 
+{{/* The live card playing back a recording, from the Recordings page. The
+   page script keeps the song, position and progress up to date from the
+   audio, and the progress bar seeks. Lines on the bar mark where each song
+   starts, with its title and artist on hover. */}}
+{{define "playback"}}
+<section class="card live-card playback" data-key="playback-{{.ID}}" data-duration="{{.DurationMs}}">
+  <div class="live-body">
+  {{template "art" (art .Image .StationLogo "art-lg" false)}}
+  <div class="live-main">
+  <div class="live-head">
+    <div class="live-title">
+      <h2>{{if .ShowID}}<a href="/shows/{{.ShowID}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}</h2>
+      {{with .DJ}}<span class="muted">with {{.}}</span>{{end}}
+    </div>
+    <div class="live-meta">
+      <span class="slot">{{aired .Start .End}}</span>
+      <span class="badge">RECORDING</span>
+    </div>
+  </div>
+  <div class="progress seek" role="slider" tabindex="0" aria-label="Position" aria-valuemin="0" aria-valuemax="{{.DurationMs}}" aria-valuenow="0"><div class="fill" style="width: 0%"></div>
+    {{- range .Marks}}<span class="mark{{with .Align}} {{.}}{{end}}" style="left: {{printf "%.3f" .Percent}}%" data-start="{{.Start}}" data-label="{{.Label}}" aria-hidden="true"></span>{{end -}}
+  </div>
+  <div class="stats muted"><span class="position">0:00</span> / {{dur .DurationMs}}{{with kbps .Bytes .DurationMs}} · {{.}} kbps{{end}} · <button type="button" class="link back-live">Back to live</button></div>
+  <div class="live-foot">
+    <div class="now-playing">
+      <span class="label">Now playing</span>
+      <span class="song"></span>
+      <span class="artist"></span>
+    </div>
+    <div class="live-actions">
+      {{template "listen"}}
+    </div>
+  </div>
+  </div>
+  </div>
+</section>
+{{end}}
+
+{{/* An artist credit (see artistPart), each name linked to its Wikipedia
+   page if it has one. */}}
+{{define "credit"}}{{range .}}{{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener" title="{{.Text}} on Wikipedia">{{.Text}}</a>{{else}}{{.Text}}{{end}}{{end}}{{end}}
+
 {{/* The Listen button: a play icon in a circle, or stop while listening
-   (aria-pressed, set by the page script, which also sets the label). */}}
+   (aria-pressed, set by the page script, which also sets the label); pause
+   instead of stop while playing back a recording (data-mode). */}}
 {{define "listen"}}<button type="button" class="listen" aria-pressed="false" aria-label="Listen to WCBN live" title="Listen to WCBN live">
 <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>
 <svg class="icon-stop" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
+<svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4.5" height="14" rx="1.2"/><rect x="13.5" y="5" width="4.5" height="14" rx="1.2"/></svg>
 </button>{{end}}
 
 {{define "art"}}

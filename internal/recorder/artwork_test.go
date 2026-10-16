@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"wcbn-recorder/internal/spinitron"
@@ -32,10 +31,10 @@ func TestFetchArtwork(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	if a, err := fetchArtwork(t.Context(), srv.URL+"/a.jpg"); err != nil || a.mime != "image/jpeg" || a.coverName() != "cover.jpg" || !bytes.Equal(a.data, testJPEG) {
+	if a, err := fetchArtwork(t.Context(), srv.URL+"/a.jpg"); err != nil || a.mime != "image/jpeg" || !bytes.Equal(a.data, testJPEG) {
 		t.Errorf("jpeg: %v %+v", err, a)
 	}
-	if a, err := fetchArtwork(t.Context(), srv.URL+"/a.png"); err != nil || a.mime != "image/png" || a.coverName() != "cover.png" {
+	if a, err := fetchArtwork(t.Context(), srv.URL+"/a.png"); err != nil || a.mime != "image/png" {
 		t.Errorf("png: %v %+v", err, a)
 	}
 	if _, err := fetchArtwork(t.Context(), srv.URL+"/lie.jpg"); err == nil {
@@ -56,13 +55,8 @@ func TestRecordingArtwork(t *testing.T) {
 	if err := f.finalize(t.Context(), f.part, f.out); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := os.ReadFile(filepath.Join(f.out.trackDir, "cover.jpg")); err != nil || !bytes.Equal(got, testJPEG) {
-		t.Errorf("cover.jpg: %v", err)
-	}
-	for _, name := range []string{"01 - Toots & the Maytals - Pressure Drop.mp3", "02 - Toots & the Maytals - Monkey Man.mp3", filepath.Base(f.out.showFile)} {
-		if apic := readAPIC(t, filepath.Join(f.out.trackDir, name)); !bytes.HasSuffix(apic, testJPEG) {
-			t.Errorf("%s: artwork not embedded", name)
-		}
+	if apic := readAPIC(t, f.out.showFile); !bytes.HasSuffix(apic, testJPEG) {
+		t.Error("artwork not embedded")
 	}
 }
 
@@ -73,10 +67,7 @@ func TestRecordingWithoutArtwork(t *testing.T) {
 	if err := f.finalize(t.Context(), f.part, f.out); err != nil {
 		t.Fatal(err)
 	}
-	if covers, _ := filepath.Glob(filepath.Join(f.out.trackDir, "cover.*")); len(covers) != 0 {
-		t.Errorf("unexpected cover %v", covers)
-	}
-	if apic := readAPIC(t, filepath.Join(f.out.trackDir, "01 - Toots & the Maytals - Pressure Drop.mp3")); apic != nil {
+	if apic := readAPIC(t, f.out.showFile); apic != nil {
 		t.Error("embedded artwork without any")
 	}
 }

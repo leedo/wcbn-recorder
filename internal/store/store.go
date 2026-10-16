@@ -34,7 +34,8 @@ type Show struct {
 }
 
 // migrations are applied in order; PRAGMA user_version tracks progress.
-var migrations = []string{
+// Each is SQL, or a func for one SQL can't easily express.
+var migrations = []any{
 	`CREATE TABLE shows (
 		id          INTEGER PRIMARY KEY,
 		key         TEXT NOT NULL UNIQUE,
@@ -53,7 +54,26 @@ var migrations = []string{
 	// refresh, so existing databases get artwork right away.
 	`ALTER TABLE shows ADD COLUMN image TEXT NOT NULL DEFAULT '';
 	UPDATE shows SET details_at = 0;`,
-	recordingMigration, // see recordings.go
+	recordingMigration,     // see recordings.go
+	mergeResumedRecordings, // see recordings.go
+	// Where playback of each recording got to, to resume from.
+	`ALTER TABLE recordings ADD COLUMN position_ms INTEGER NOT NULL DEFAULT 0;`,
+	// Recordings whose songs are to come from the DJ's Spinitron playlist.
+	`ALTER TABLE recordings ADD COLUMN songs_pending INTEGER NOT NULL DEFAULT 0;`,
+	// The airing's playlist page on Spinitron, found with its songs. Recent
+	// recordings look for their songs again, to find it.
+	`ALTER TABLE recordings ADD COLUMN playlist_url TEXT NOT NULL DEFAULT '';
+	UPDATE recordings SET songs_pending = 1
+		WHERE finished_at > 0 AND end_at > CAST(strftime('%s', 'now') AS INTEGER) - 7 * 24 * 60 * 60;`,
+	// Song folders' playlist files are no longer listed.
+	`ALTER TABLE recordings DROP COLUMN playlist;`,
+	// Playback positions are kept in the browser instead.
+	`ALTER TABLE recordings DROP COLUMN position_ms;`,
+	artistLinksMigration, // see artists.go
+	// Songs' releases, from the DJs' Spinitron playlists.
+	`ALTER TABLE songs ADD COLUMN album TEXT NOT NULL DEFAULT '';
+	ALTER TABLE songs ADD COLUMN label TEXT NOT NULL DEFAULT '';
+	ALTER TABLE songs ADD COLUMN year INTEGER NOT NULL DEFAULT 0;`,
 }
 
 func Open(path string) (*Store, error) {
@@ -86,7 +106,13 @@ func (s *Store) migrate() error {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(migrations[i]); err != nil {
+		switch m := migrations[i].(type) {
+		case string:
+			_, err = tx.Exec(m)
+		case func(*sql.Tx) error:
+			err = m(tx)
+		}
+		if err != nil {
 			tx.Rollback()
 			return fmt.Errorf("migration %d: %w", i+1, err)
 		}

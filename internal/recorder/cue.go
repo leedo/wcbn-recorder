@@ -33,11 +33,28 @@ func cueText(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, "'") + `"`
 }
 
+// cueTrack is a song in a CUE sheet.
+type cueTrack struct {
+	title, artist string
+	startMs       int64 // in the show file
+}
+
 // writeCue writes the CUE sheet for the whole-show file at showFile.
 func (r *recording) writeCue(meta showMeta, showFile string, segs []segment) error {
-	if len(segs) > maxCueTracks {
-		log.Printf("%q has %d tracks; the CUE sheet lists the first %d", meta.Title, len(segs), maxCueTracks)
-		segs = segs[:maxCueTracks]
+	var tracks []cueTrack
+	for _, s := range segs {
+		title, artist := splitSong(s.mark.title)
+		tracks = append(tracks, cueTrack{title, artist, s.startMs})
+	}
+	return writeCueSheet(meta, showFile, tracks)
+}
+
+// writeCueSheet writes the CUE sheet listing tracks for the show file at
+// showFile, replacing any there.
+func writeCueSheet(meta showMeta, showFile string, tracks []cueTrack) error {
+	if len(tracks) > maxCueTracks {
+		log.Printf("%q has %d tracks; the CUE sheet lists the first %d", meta.Title, len(tracks), maxCueTracks)
+		tracks = tracks[:maxCueTracks]
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "REM GENRE %s\n", cueText(meta.Genre))
@@ -48,14 +65,13 @@ func (r *recording) writeCue(meta showMeta, showFile string, segs []segment) err
 	fmt.Fprintf(&b, "PERFORMER %s\n", cueText(meta.Artist))
 	fmt.Fprintf(&b, "TITLE %s\n", cueText(meta.albumTitle()))
 	fmt.Fprintf(&b, "FILE %s MP3\n", cueText(filepath.Base(showFile)))
-	for i, s := range segs {
-		title, artist := splitSong(s.mark.title)
+	for i, t := range tracks {
 		fmt.Fprintf(&b, "  TRACK %02d AUDIO\n", i+1)
-		fmt.Fprintf(&b, "    TITLE %s\n", cueText(title))
-		if artist != "" {
-			fmt.Fprintf(&b, "    PERFORMER %s\n", cueText(artist))
+		fmt.Fprintf(&b, "    TITLE %s\n", cueText(t.title))
+		if t.artist != "" {
+			fmt.Fprintf(&b, "    PERFORMER %s\n", cueText(t.artist))
 		}
-		fmt.Fprintf(&b, "    INDEX 01 %s\n", cueTime(s.startMs))
+		fmt.Fprintf(&b, "    INDEX 01 %s\n", cueTime(t.startMs))
 	}
 	path := cuePath(showFile)
 	tmp := path + ".tmp"

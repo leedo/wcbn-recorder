@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 
 	"wcbn-recorder/internal/httpx"
 	"wcbn-recorder/internal/spinitron"
@@ -57,25 +55,4 @@ func showArtwork(ctx context.Context, title string, info spinitron.ShowInfo) *ar
 		log.Printf("couldn't load artwork for %q: %v", title, err)
 	}
 	return nil
-}
-
-// coverName is the file Plex and other players look for as album art.
-func (a *artwork) coverName() string {
-	if a.mime == "image/png" {
-		return "cover.png"
-	}
-	return "cover.jpg"
-}
-
-// writeCover saves the artwork into dir, unless a cover is already there.
-func (a *artwork) writeCover(dir string) error {
-	path := filepath.Join(dir, a.coverName())
-	if _, err := os.Stat(path); err == nil {
-		return nil
-	}
-	tmp := filepath.Join(dir, "."+a.coverName()+".tmp")
-	if err := os.WriteFile(tmp, a.data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
 }

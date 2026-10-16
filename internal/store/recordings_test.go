@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"testing"
 	"time"
 
@@ -77,5 +78,121 @@ func TestRecordings(t *testing.T) {
 	}
 	if songs, _ := s.Songs(ctx, id); len(songs) != 0 {
 		t.Errorf("songs left: %+v", songs)
+	}
+}
+
+// Resumed airings used to get a row per run; the migration merges them.
+func TestMergeResumedRecordings(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	start := time.Unix(1_790_000_000, 0)
+	add := func(airing, dir, show string, started time.Time, songs ...int) int64 {
+		id, err := s.AddRecording(ctx, Recording{Airing: airing, Title: "Club H", Start: start, End: start.Add(time.Hour), StartedAt: started, Dir: dir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range songs {
+			s.AddSong(ctx, Song{RecordingID: id, Number: n, Title: fmt.Sprint(n), PlayedAt: started})
+		}
+		s.UpdateRecording(ctx, Recording{ID: id, FinishedAt: started.Add(time.Minute), ShowFile: show, Bytes: 100, DurationMs: 1000})
+		return id
+	}
+	// Song files on: the runs' songs are numbered on already.
+	first := add("h|1", "Club H/Club H - 1", "Club H/Club H - 1/.Club H - 1.mp3", start, 1, 2)
+	add("h|1", "Club H/Club H - 1", "Club H/Club H - 1/.Club H - 1 2.mp3", start.Add(10*time.Minute), 3)
+	// Song files off: each run numbered from 1.
+	off := add("h|2", "Club H", "Club H/Club H - 2.mp3", start, 1, 2)
+	add("h|2", "Club H", "Club H/Club H - 2 2.mp3", start.Add(10*time.Minute), 1)
+	add("h|2", "Club H", "Club H/Club H - 2 3.mp3", start.Add(20*time.Minute), 1, 2)
+	other := add("h|3", "Club H/Club H - 3", "x.mp3", start, 1)
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mergeResumedRecordings(tx); err != nil {
+		t.Fatal(err)
+	}
+	tx.Commit()
+
+	recs, _ := s.Recordings(ctx)
+	got := map[int64]Recording{}
+	for _, r := range recs {
+		got[r.ID] = r
+	}
+	if len(recs) != 3 || got[other].Songs != 1 {
+		t.Fatalf("recordings: %+v", recs)
+	}
+	for id, want := range map[int64][]int{first: {1, 2, 3}, off: {1, 2, 3, 4, 5}} {
+		songs, _ := s.Songs(ctx, id)
+		var nums []int
+		for _, s := range songs {
+			nums = append(nums, s.Number)
+		}
+		if fmt.Sprint(nums) != fmt.Sprint(want) {
+			t.Errorf("recording %d songs %v, want %v", id, nums, want)
+		}
+	}
+	if r := got[first]; r.Bytes != 200 || r.DurationMs != 2000 || r.ShowFile != "Club H/Club H - 1/.Club H - 1.mp3" || !r.FinishedAt.Equal(start.Add(11*time.Minute)) {
+		t.Errorf("merged: %+v", r)
+	}
+	if r := got[off]; r.Bytes != 300 || r.ShowFile != "Club H/Club H - 2.mp3" {
+		t.Errorf("merged with song files off: %+v", r)
+	}
+}
+
+func TestRecordingsPage(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	start := time.Unix(1_790_000_000, 0)
+	for i := range 5 {
+		at := start.Add(time.Duration(i) * time.Hour)
+		if _, err := s.AddRecording(ctx, Recording{Airing: fmt.Sprint(i), Title: fmt.Sprint(i), Start: at, End: at, StartedAt: at, Dir: "x"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recs, total, err := s.RecordingsPage(ctx, 0, 2, 2)
+	if err != nil || total != 5 || len(recs) != 2 || recs[0].Title != "2" || recs[1].Title != "1" {
+		t.Errorf("page: %+v, %d, %v", recs, total, err)
+	}
+	if recs, total, _ := s.RecordingsPage(ctx, 0, 2, 10); len(recs) != 0 || total != 5 {
+		t.Errorf("past the end: %+v, %d", recs, total)
+	}
+	// One show's: none here, since none of these titles is a show.
+	if recs, total, _ := s.RecordingsPage(ctx, 1, 2, 0); len(recs) != 0 || total != 0 {
+		t.Errorf("one show's: %+v, %d", recs, total)
+	}
+}
+
+// Songs so far leave a recording waiting for the rest; the final list doesn't.
+func TestSetSongsSoFar(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	start := time.Unix(1_790_000_000, 0)
+	id, _ := s.AddRecording(ctx, Recording{Airing: "a", Title: "Club H", Start: start, End: start, StartedAt: start, Dir: "Club H"})
+	s.SetSongsPending(ctx, id, true)
+	if err := s.SetSongsSoFar(ctx, id, []Song{{Number: 1, Title: "a", PlayedAt: start}}, "https://example.org/pl/1"); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := s.Recording(ctx, id); !r.SongsPending || r.Songs != 1 || r.PlaylistURL != "https://example.org/pl/1" {
+		t.Errorf("so far: %+v", r)
+	}
+	s.SetSongs(ctx, id, []Song{{Number: 1, Title: "a", PlayedAt: start}, {Number: 2, Title: "b", PlayedAt: start}}, "https://example.org/pl/1")
+	if r, _ := s.Recording(ctx, id); r.SongsPending || r.Songs != 2 {
+		t.Errorf("final: %+v", r)
+	}
+}
+
+// A song's release, label and year are saved with it.
+func TestSongRelease(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	start := time.Unix(1_790_000_000, 0)
+	id, _ := s.AddRecording(ctx, Recording{Airing: "a", Title: "Animal Haus", Start: start, End: start, StartedAt: start, Dir: "Animal Haus"})
+	s.SetSongs(ctx, id, []Song{{Number: 1, Title: "The Caterpillar", Artist: "The Cure", Album: "The Top", Label: "Rhino/Elektra", Year: 1984, PlayedAt: start}}, "")
+	s.AddSong(ctx, Song{RecordingID: id, Number: 2, Title: "Butterfly", Artist: "Jamiroquai", Album: "Synkronized", Label: "Sony Music CG", Year: 1999, PlayedAt: start})
+	songs, err := s.Songs(ctx, id)
+	if err != nil || len(songs) != 2 || songs[0].Album != "The Top" || songs[0].Label != "Rhino/Elektra" || songs[0].Year != 1984 || songs[1].Year != 1999 {
+		t.Errorf("songs = %+v, %v", songs, err)
 	}
 }

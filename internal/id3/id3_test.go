@@ -2,7 +2,6 @@ package id3
 
 import (
 	"bytes"
-	"encoding/binary"
 	"strings"
 	"testing"
 )
@@ -55,7 +54,6 @@ func TestID3Tag(t *testing.T) {
 	tag.UserText("dj", "brian tomsic")
 	tag.Comment("Tuesday\n\nhttps://example.org")
 	tag.UserURL("show", "https://spinitron.com/WCBN/show/264320/Train-To-Skaville")
-	tag.Chapters([]Chapter{{0, 1500, "Ska Song by Band"}, {1500, 4000, "Café ☕"}})
 
 	var buf bytes.Buffer
 	tag.WriteTo(&buf)
@@ -72,7 +70,7 @@ func TestID3Tag(t *testing.T) {
 	for _, f := range frames {
 		ids = append(ids, f.id)
 	}
-	if got := strings.Join(ids, ","); got != "TIT2,TXXX,COMM,WXXX,CHAP,CHAP,CTOC" {
+	if got := strings.Join(ids, ","); got != "TIT2,TXXX,COMM,WXXX" {
 		t.Fatalf("frames = %s", got)
 	}
 	if got := string(frames[0].body); got != "\x03Train To Skaville (2026-10-13)" {
@@ -83,31 +81,6 @@ func TestID3Tag(t *testing.T) {
 	}
 	if got := string(frames[2].body); got != "\x03eng\x00Tuesday\n\nhttps://example.org" {
 		t.Errorf("COMM = %q", got)
-	}
-
-	// CHAP: element ID, start, end, 8 bytes of unused offsets, then a TIT2 subframe.
-	ch := frames[5].body
-	id, rest, _ := bytes.Cut(ch, []byte{0})
-	if string(id) != "ch1" || binary.BigEndian.Uint32(rest[0:4]) != 1500 || binary.BigEndian.Uint32(rest[4:8]) != 4000 {
-		t.Errorf("bad CHAP % x", ch)
-	}
-	sub := parseFrames(t, rest[16:])
-	if len(sub) != 1 || sub[0].id != "TIT2" || string(sub[0].body) != "\x03Café ☕" {
-		t.Errorf("bad CHAP subframes %+v", sub)
-	}
-	if got := string(frames[6].body); got != "toc\x00\x03\x02ch0\x00ch1\x00" {
-		t.Errorf("CTOC = %q", got)
-	}
-}
-
-func TestChapterLimit(t *testing.T) {
-	var tag Tag
-	tag.Chapters(make([]Chapter, 300))
-	var buf bytes.Buffer
-	tag.WriteTo(&buf)
-	frames := parseFrames(t, buf.Bytes()[10:])
-	if len(frames) != MaxChapters+1 || frames[len(frames)-1].body[5] != MaxChapters {
-		t.Errorf("got %d frames", len(frames))
 	}
 }
 

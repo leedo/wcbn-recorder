@@ -46,9 +46,15 @@ type App struct {
 	changed   chan struct{}
 	done      chan struct{}
 
-	wake           chan struct{} // re-evaluate selections now
-	detailsRunning atomic.Bool
-	wg             sync.WaitGroup
+	wake             chan struct{} // re-evaluate selections now
+	detailsRunning   atomic.Bool
+	playlistsRunning atomic.Bool // fillPendingSongs is running
+	artistsRunning   atomic.Bool // lookUpArtists is running
+	// songsChanged counts the changes to recordings' songs and artist links,
+	// for the pages showing them to redraw (see recordingsState).
+	songsChanged atomic.Int64
+	artists      artistCache
+	wg           sync.WaitGroup
 }
 
 // NewApp returns the app. logs is the log output the Logs page shows; nil
@@ -76,6 +82,13 @@ func poke(c chan struct{}) {
 	case c <- struct{}{}:
 	default:
 	}
+}
+
+// songsUpdated tells the pages that recordings' songs or artist links have
+// changed.
+func (a *App) songsUpdated() {
+	a.songsChanged.Add(1)
+	a.notify()
 }
 
 // notify wakes the page's event streams to send what's changed.
@@ -106,6 +119,8 @@ func (a *App) Run(ctx context.Context) {
 		if !now.Before(nextRefresh) {
 			if a.Refresh(ctx) {
 				nextRefresh = now.Add(a.cfg.PollInterval.Duration)
+				a.checkPlaylists(ctx)
+				a.checkArtists(ctx)
 			} else {
 				nextRefresh = now.Add(time.Minute)
 			}
@@ -162,9 +177,17 @@ func (a *App) startDue(ctx context.Context, now time.Time) time.Duration {
 		a.active[key] = rec
 		started = true
 		a.wg.Add(1)
+		watching, stopWatching := context.WithCancel(ctx)
+		a.wg.Add(1)
 		go func() {
 			defer a.wg.Done()
-			if err := rec.Run(ctx); err != nil {
+			a.watchPlaylist(watching, rec)
+		}()
+		go func() {
+			defer a.wg.Done()
+			err := rec.Run(ctx)
+			stopWatching()
+			if err != nil {
 				log.Printf("recording %q failed: %v", job.Event.Title, err)
 			}
 			a.mu.Lock()

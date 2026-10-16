@@ -4,7 +4,7 @@ Watches the WCBN program calendar on Spinitron
 (<https://spinitron.com/WCBN/calendar>) and records the shows you pick from the
 live stream to disk. Shows are picked in a web UI, and show details and
 selections are kept in a SQLite database. Audio is saved exactly as streamed (320 kbps MP3), with
-an ID3 tag and per-track chapters added. It's a single Go binary with no
+an ID3 tag and a CUE sheet listing the songs. It's a single Go binary with no
 runtime dependencies.
 
 ## Usage
@@ -26,44 +26,82 @@ internal/config/      config file loading
 internal/httpx/       HTTP client that fills in missing TLS intermediates
 internal/spinitron/   Spinitron calendar and show pages
 internal/store/       SQLite: show details, selections, and recorded shows and songs
-internal/mpeg/        MP3 frames and gapless Info frames
+internal/mpeg/        MP3 frames
 internal/id3/         ID3v2.4 tag writer
-internal/recorder/    scheduler, recording, song files, web UI (templates/)
+internal/musicbrainz/ artists' Wikipedia pages, from MusicBrainz
+internal/recorder/    scheduler, recording, show files, web UI (templates/)
 ```
 
 ## Web UI
 
-The UI has four pages, **Upcoming** (the home page), **Shows**, **Recordings** and **Logs**, with the live panel (what's
-on air or recording, described below) at the top of both. Scroll it out of view
+The UI has three pages, **Recordings** (the home page), **Shows** and **Logs**,
+with the live panel (what's on air or recording, described below) at the top
+of each. Scroll it out of view
 and it shrinks into a bar pinned to the top of the window, with the show's
 artwork, title and DJ, the current song, a REC badge while recording, and the
 Listen button; click the show in the bar to scroll back up to the panel.
 Moving between pages doesn't reload the page: the page's script fetches the
 next page and swaps it in, so listening carries on. Every page is still an ordinary URL that works on its own.
-**Recordings** lists everything recorded, newest first, with its length, size,
-song count and folder (see Recordings database below). Recordings in progress
-have an **End recording** button; the others have **Delete**, which, after
-asking to confirm, deletes the recording's folder and everything in it and
-removes it from the database. A resumed airing's recordings share the folder,
-so they go together. With `track_files` off, a recording has no folder of its
-own (its files sit in the program folder), so Delete removes just its show
-file and CUE sheet. The list updates by itself as recordings start and finish.
+
+The UI follows your system's light or dark setting. The sun or moon at the
+right end of the footer switches to the other theme, and your browser
+remembers the choice; switching back to the system's own theme forgets it,
+so the UI follows the system again.
+**Recordings** lists the selected shows coming up in the next two days (48
+hours) under **Upcoming**, or, if none are, the next one on the schedule; then everything recorded, newest first and ten to a
+page, under **Recorded** (see Recordings database below), with a **Play** button for each
+finished one. Each links to
+its details page, with the show's artwork and everything known about it:
+when it aired and was recorded, its length,
+size and bitrate, its Spinitron links, its files on disk with their sizes, and
+its songs, each with where it starts in the recording, its length and when it
+aired; click a song's time to play the recording from it. Artists link to
+their Wikipedia pages where one can be found, there and on the live card
+(the song playing, or playing back): each artist is looked up on
+MusicBrainz (whose own name for the artist has to match), and its Wikidata
+entry gives the page. A credit naming several artists ("x/y", "x feat. y") is
+looked up whole, then name by name. Lookups run in the background, one
+request a second as MusicBrainz asks (the live card's artist as soon as it's
+shown), and are kept in the database (an artist
+with no page is looked up again after 30 days). The details page of a
+recording in progress has an **End recording**
+button; the others have **Play** and **Delete**.
+Play plays the recording in the live card, in place of the live stream,
+showing the song at the current position (from the songs table). Lines on
+its progress bar mark where each song starts; hover over one for the song's
+title and artist. Click or
+use the arrow keys on its progress bar to seek, and **Back to live** to return
+to the live card. A resumed airing's show files play as one. Where playback
+got to is saved in your browser (its local storage, so each browser keeps its
+own), and playing the recording again, or
+reloading the page while it's up, resumes from there (from the start once
+it's been played to the end). Paused, the URL has `&paused=1`, so a reload
+brings the recording back paused rather than playing. **Delete**, after
+asking to confirm, deletes the recording's show files and CUE sheets and
+removes it from the database. A resumed airing is listed as one recording.
+Recordings from when each song was also saved as its own file have a folder
+of their own, and Delete removes that folder and everything in it. The list
+and details pages update by themselves as recordings start and finish.
 **Logs** shows the
 recorder's log output: the last 1,000 lines since it started, with new lines
 added as they're logged. The log is also written to stderr as usual (with
 timestamps, except under journald, which adds its own).
 
-**Upcoming** lists the selected shows coming up in the next two days (48 hours). The
-**Shows** page lists every show on the calendar, with its DJ and category
-(under the title) and next airing. Search it by show or DJ, or filter it by
-category. Click **+ Add** to record a show; the shows you're recording are
-highlighted and have **Remove** instead. Old `/?add=1` and `/shows?add=1` links
+The **Shows** page has two lists. **Your shows** are the shows you're
+recording, each with **Remove**. **Add shows** is every other
+show on the calendar, with its DJ and category (under the title) and next
+airing; search it by show or DJ, or filter it by category, and click **Add**
+to record a show. Adding or removing a show moves it to the other list. Old `/?add=1` and `/shows?add=1` links
 redirect to the Shows page. Shows no longer on the calendar have a **delete**
-link (unless they're selected) to take them off the list.
-Click a column header to sort by it, and click again to reverse. "Next
-airing" sorts by date. The button column, on the right, isn't sortable. The
-sort is remembered, and links can set it with
-`?sort=<column number>&dir=asc|desc` (columns count from 0).
+link (unless they're selected) to take them off the list. Each show links to
+its page, with its artwork, description, schedule and Spinitron link, **Add**
+or **Remove**, and its recordings, ten to a page. The show names on the live
+card, the upcoming list and a recording's details page link there too.
+Both lists start sorted by next airing. Click a column header to sort by
+it, and click again to reverse; each list remembers its own sort. "Next
+airing" sorts by date. The button column, on the right, isn't sortable.
+Links can set Add shows' sort with `?sort=<column number>&dir=asc|desc`
+(columns count from 0).
 
 Selecting a show that is on the air starts recording right away. Removing a show
 that is being recorded lets that recording finish.
@@ -82,6 +120,18 @@ While a show is recording, the live panel shows the recording instead:
   recorded, the stream's bitrate (read from the MP3 frames being saved), and
   when recording stops
 - **now playing:** the current song's title and artist
+
+### On a phone
+
+The pages fit a phone's width. On a narrow screen, each show in the Shows
+page's lists drops its artwork and puts its next airing under its title, with
+Add or Remove beside it, instead of in columns.
+
+To use it like an app on an iPhone, open it in Safari, tap Share, then **Add
+to Home Screen**. It opens from its icon (the WCBN logo, named WCBN) in its
+own window without Safari's bars, starting on the Recordings page, and the
+status bar matches the light or dark theme. Android's **Add to Home screen**
+or **Install app** works the same way, using `/manifest.webmanifest`.
 
 ### Listening
 
@@ -105,11 +155,11 @@ so the recording's audio, and the stream after a dropped connection, are lined
 up frame for frame: nothing is repeated or skipped.
 
 **End recording**, on the Recordings page, stops the recording now, after asking to confirm. Everything
-recorded so far is saved as usual (whole-show file, songs and playlist), and the
+recorded so far is saved as usual (the show file and CUE sheet), and the
 show stays selected, so its next airing is recorded normally. It isn't started
 again during the current airing by itself. To record the rest of the airing
-after all, remove the show and add it back: recording resumes in the same
-folder (see Resuming below).
+after all, remove the show and add it back: recording resumes beside the same
+files (see Resuming below).
 
 The server pushes updates to the page (server-sent events, at `/events`) while
 it's visible: right away when a recording starts or ends, a show is selected,
@@ -134,50 +184,43 @@ Each recording produces:
 
 ```
 <destination>/<program>/
-  <show> - YYYY-MM-DD/             one file per song, in air order
-    .<show> - YYYY-MM-DD.mp3       the whole show, with a chapter per song (hidden backup)
-    01 - <artist> - <title>.mp3
-    02 - <artist> - <title>.mp3
-    …
-    .<show> - YYYY-MM-DD.cue       CUE sheet for the whole show (hidden, with it)
-    <show> - YYYY-MM-DD.m3u8       playlist of the songs
-    cover.jpg                      the show's artwork
+  <show> - YYYY-MM-DD.mp3          the whole show
+  <show> - YYYY-MM-DD.cue          CUE sheet for the whole show
 ```
 
-The whole-show file is a backup when song files are on, so it's kept hidden
-(a dotfile) inside the song folder, where music libraries such as Plex ignore
-it; `ls -a` or your file manager's "show hidden files" reveals it. With
-`track_files` off, the whole show is the only output and is written visibly
-instead, as `<destination>/<program>/<show> - YYYY-MM-DD.mp3`.
+The CUE sheet lists each song as a track with its title, artist and start
+time. Players that support CUE sheets, such as foobar2000, VLC and Kodi, then
+show the one file as an album of songs, played gaplessly. The CUE format allows at most 99 tracks, and
+minutes go past 99 on long shows, which software players accept.
 
-A CUE sheet is written next to the whole-show file, with the same name ending
-in `.cue`, listing each song as a track with its title, artist and start time.
-Players that support CUE sheets, such as foobar2000, VLC and Kodi, then show the
-one file as an album of songs, played gaplessly. (Plex doesn't read CUE sheets;
-it uses the song files.) The start times are the same split points as the song
-files and chapters. The CUE format allows at most 99 tracks, and minutes go
-past 99 on long shows, which software players accept.
-
-Set `show_file` or `track_files` to `false`
-to skip either output. While recording, audio goes to a hidden `.….mp3.part`
-file in the show's folder (in the program folder when `track_files` is off).
-Each song file is written as soon as the stream moves on to the next song, so
-the folder fills up during the show, and the playlist is updated after each
-one; only the last song and the whole-show file are written when the show ends.
+While recording, audio goes to a hidden `.….mp3.part` file in the program
+folder; the show file and CUE sheet are written when the show ends.
 Ctrl-C / SIGTERM stops gracefully: in-progress recordings are tagged and kept.
+
+Older versions could also save each song as its own MP3 in a
+`<show> - YYYY-MM-DD/` folder, with a `cover.jpg`. Those
+recordings stay listed and can still be deleted; the `show_file`,
+`track_files` and `gapless` settings are no longer used and are ignored.
 
 ### Resuming
 
 If recording of an airing starts again (the recorder was restarted while the
-show was on, or the show was ended and added back), it resumes in the same
-folder. Song numbering carries on from the last song there, the playlist is
-extended, and the song playing at the time of the restart ends up in two files
-(before and after), with whatever the recorder missed while it was down. Files
-that would otherwise clash get a number before the extension, so the second
-whole-show backup is `.<show> - YYYY-MM-DD 2.mp3`. Each recording leaves a
-hidden `.<show> - YYYY-MM-DD.airing` marker naming its airing, which is how
-the recorder tells a resume from another airing of the same show that day.
-Another airing gets its own folder, with the start time added
+show was on, or the show was ended and added back), it carries on in the same
+show file. When the new run finishes, its audio is added to the earlier
+run's, after silence as long as the gap between them, so the file keeps time
+with the clock: whatever the recorder missed while it was down is silent, and
+songs after the gap line up. The silence is MPEG frames like the stream's
+with no audio data. The file is written anew and then replaces the old one,
+so it's never left half written, and the CUE sheet lists both runs' songs.
+(If the audio can't be added, say the new run's doesn't start with an MPEG
+frame, the run gets its own show file and CUE sheet instead, with a number
+before the extension: `<show> - YYYY-MM-DD 2.mp3`, as older versions always
+did; those still play back, and are deleted, along with the first.) Each
+recording leaves a hidden `.<show> - YYYY-MM-DD.airing` marker naming its
+airing, which is how the recorder tells a resume from another airing of the
+same show that day. A resumed airing stays one recording in the database,
+with the whole file's size and length.
+Another airing gets its own name, with the start time added
 (`<show> - YYYY-MM-DD 0300`).
 
 ### Recordings database
@@ -186,17 +229,29 @@ Each recording is also listed in the database, so past recordings and their
 songs can be looked up without reading the folders. The `recordings` table has
 a row per recording, with the show's details, the airing's time slot, when
 recording started and finished, its size and length, and its files: the
-folder, whole-show file, CUE sheet, playlist and cover. The `songs` table has
-a row per song: track number, title, artist, the raw stream title, when it was
-announced, where it starts in the whole-show file and how long it is, and its
-song file. Songs are listed with `track_files` off too, as the whole-show
-file's chapters, with no song file.
+folder, show file and CUE sheet. The `songs` table has a row per song: track
+number, title, artist, its album, record label and year (when the DJ logged
+them), when it was played, and where it starts in the recording and how long
+it is. The details page shows the album, with the label and year in its tooltip.
+
+The songs come from the DJ's playlist on Spinitron, not the stream's titles,
+which are often missing or stuck. While a show is recording, its playlist is
+read every minute, and the songs logged so far are listed, for DJs who log
+them as they play. A finished recording is marked as waiting
+for its songs (**finding songs** on the Recordings page) until its playlist
+turns up in the calendar feed, which is checked each time the schedule is
+refreshed, from 10 minutes after the airing for up to a week. Spinitron gives
+each song's time only to the minute, and some playlists are logged with the
+wrong clock (hours off), though the gaps between songs are right. So when the
+first song's time falls in the show's slot (or up to 15 minutes before), the
+times are used as they are; otherwise the first song is put at the start of
+the slot and the rest follow at their gaps. The recording's CUE sheet is then
+rewritten with the playlist's songs (one per show file, for a resumed airing).
 
 Paths are relative to `destination`, with forward slashes, so the recordings
 folder can be moved. A row is added when recording starts, each song as it's
-saved, and the files and length once the show is written; a recording that
-gets no audio is removed again. A resumed airing gets a second row, with the
-same airing key, for the whole-show file and songs it adds. Removing a show
+finishes, and the files and length once the show is written; a recording
+that gets no audio is removed again. Removing a show
 from the list keeps its recordings. Recordings made with `-test` aren't
 listed, and a database error is logged without stopping the recording.
 
@@ -235,9 +290,6 @@ to `no`. Then make sure the `wcbn-recorder` user can write there.
 | key | default | notes |
 |---|---|---|
 | `destination` | (required) | root folder for recordings |
-| `show_file` | `true` | write the whole show as one MP3 (hidden in the song folder when `track_files` is on) |
-| `track_files` | `true` | write each song as its own MP3, plus a playlist |
-| `gapless` | `true` | make song files play back seamlessly (see Songs) |
 | `listen` | `127.0.0.1:8080` | address of the web UI |
 | `database` | `wcbn-recorder.db` | SQLite file for show details, selections and the list of recordings; relative to the working directory |
 | `programs` | none | optional show titles to select; imported into the database once, on first start |
@@ -266,54 +318,24 @@ themselves are byte-for-byte what the station sent.
 
 ## Songs
 
-Songs are split where the stream's title changes. WCBN's stream titles look
-like "<title> by <artist> on <show> with <dj>". The title and artist become the
-song file's name and tags, and the last " by " is used to split them, since
-song titles ("Stand by Me") contain it more often than artist names. Each song
-file is a byte-for-byte slice of the show's audio, cut on MP3 frame boundaries,
-so nothing is re-encoded. The playlist is extended M3U, UTF-8 (`.m3u8`), with
-durations and relative paths, so the folder can be moved as a unit.
+The stream's titles name the song playing on the live card, and the songs in
+the CUE sheet written when the show ends (until the playlist replaces it; see
+Recordings database). Songs are split where the stream's title changes. WCBN's stream titles look
+like "<title> by <artist> on <show> with <dj>". The title and artist become
+the CUE track titles, and the last " by " is used to split them,
+since song titles ("Stand by Me") contain it more often than artist names.
 
 Split points are only as accurate as the stream titles. The title changes when
 the DJ logs a song in Spinitron, which can be a few seconds early or late, so a
 song can start with the end of the previous one or with the DJ talking. Talk
 between songs usually stays with the song before it. Audio before the first
-title change (pre-roll) goes into the first file, and if the stream sends no
-titles at all, the whole show becomes a single track.
-
-### Gapless playback
-
-Cutting the stream between frames keeps the timing exact, but the first frame
-of a song can't be decoded on its own. MP3 frames borrow bits from the frames
-before them (the "bit reservoir"; WCBN's stream does this in about 99% of
-frames), and the decoder needs a frame of history. Played back to back, plain
-song files would have a ~30 ms dropout at the start of every song.
-
-With `gapless` on (the default), each song file starts two frames (52 ms) before
-its cut point, and a LAME/Xing "Info" frame at the start of the file tells the
-player to skip exactly those samples. The same information is stored as an
-`iTunSMPB` comment for Apple players. In players that support gapless MP3, such
-as foobar2000, Apple Music, mpv and other ffmpeg-based players, and Plexamp,
-consecutive song files then decode to exactly the same samples as the whole
-show; the test suite checks this sample for sample. Players without gapless
-support play the 52 ms overlap, repeating the end of the previous song.
-
-The first song of a recording, and the first after a reconnect, has no earlier
-audio to overlap. Gapless players skip the decoder's own 529-sample (12 ms)
-delay at the start of those files.
-
-Each song file's ID3 tag has the title, artist, the show and date as the album,
-the DJ as album artist, track number, date, genre, and length. The track number
-has no total ("3", not "3/12"), since the number of songs isn't known until the
-show ends. A comment says
-when it aired. Custom tags hold `show`, `dj`, `aired_at`, `stream_title` (the
-raw title from the stream), and `show_url`.
+title change (pre-roll) goes with the first song, and if the stream sends no
+titles at all, the whole show is a single track.
 
 ## Artwork
 
 Each show's image from its Spinitron page is embedded as front-cover art in the
-whole-show file and every song file, and saved as `cover.jpg` (or `cover.png`)
-in the show folder, which Plex and most music apps use as album art. The image
+show file. The image
 is whatever the show page's `og:image` tag points to, downloaded as is (often a
 small Flickr or Spinitron thumbnail). A few shows link Flickr images that no
 longer exist; those recordings get the WCBN station logo instead. Only JPEG and PNG images are used, and a
@@ -341,6 +363,4 @@ It holds:
 - **length:** exact duration, counted from the audio frames
 
 Custom tags hold `show`, `dj`, `description`, `show_start`, `show_end`,
-`show_url`, and `source`. Every song title the stream announced during the show
-becomes a chapter, with a table of contents so players list them in order.
-The table of contents can hold at most 255 chapters.
+`show_url`, and `source`.

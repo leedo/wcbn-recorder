@@ -5,23 +5,63 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{{with .Title}}{{.}} · {{end}}WCBN Recorder</title>
 <link rel="icon" type="image/png" href="/favicon.png">
+{{/* Added to an iPhone's home screen, the app opens in its own window
+   without Safari's bars, named WCBN, with the logo for its icon. The status
+   bar and the browser's bars take the page's background, light or dark. */}}
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#fafaf8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#161618" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="WCBN">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="format-detection" content="telephone=no">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<script>
+  // The theme: the system's, light or dark, unless one was picked with the
+  // nav bar's toggle and saved in this browser as "wcbn-theme". Set here,
+  // before the page is drawn, so it never flashes the other one.
+  function applyTheme(theme) {
+    if (theme) document.documentElement.dataset.theme = theme;
+    else delete document.documentElement.dataset.theme;
+    // The status bar and browser bars follow it too.
+    const dark = theme ? theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.content = dark ? "#161618" : "#fafaf8");
+  }
+  try { applyTheme(localStorage.getItem("wcbn-theme")); } catch {}
+</script>
 <style>
+  /* The light theme, and the dark one: by the system's setting, unless the
+     toggle picked one (data-theme on <html>). */
   :root {
+    color-scheme: light;
     --bg: #fafaf8; --fg: #1d1d1f; --muted: #6b6b70; --line: #e3e3e0;
     --accent: #b3122d; --accent-bg: #fbe9ec; --rec: #c4141c; --card: #fff;
     --listen-icon: var(--fg); /* the play icon; white on the dark theme's circle */
   }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme=light]) {
+      color-scheme: dark;
       --bg: #161618; --fg: #ececee; --muted: #9a9aa2; --line: #2e2e33;
       --accent: #ff6b81; --accent-bg: #3a1d24; --rec: #ff4d55; --card: #1f1f22;
       --listen-icon: #fff;
     }
   }
+  :root[data-theme=dark] {
+    color-scheme: dark;
+    --bg: #161618; --fg: #ececee; --muted: #9a9aa2; --line: #2e2e33;
+    --accent: #ff6b81; --accent-bg: #3a1d24; --rec: #ff4d55; --card: #1f1f22;
+    --listen-icon: #fff;
+  }
   * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; } /* no bigger text when an iPhone turns sideways */
+  /* The page reaches the screen's edges (viewport-fit=cover), so keep its
+     content clear of the notch and the home indicator. */
+  body { padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); }
   main { max-width: 1100px; margin: 0 auto; padding: 24px 20px 64px; }
   header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
@@ -29,7 +69,7 @@
   h2 { font-size: 16px; margin: 32px 0 10px; }
   a { color: inherit; }
   .muted { color: var(--muted); }
-  footer { width: calc(100% - 40px); max-width: 1060px; margin: 0 auto 40px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+  footer { width: calc(100% - 40px); max-width: 1060px; margin: 0 auto 40px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .status { font-size: 13px; display: flex; gap: 10px; align-items: center; }
   .error { background: var(--accent-bg); border: 1px solid var(--accent); border-radius: 8px; padding: 10px 14px; margin: 16px 0; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
@@ -59,7 +99,8 @@
   td.title { min-width: 220px; }
   @media (max-width: 640px) { td.title { min-width: 0; } } /* so the table fits; titles wrap instead */
   /* The Show column takes the spare width; Next airing and Add are only as wide as their contents. */
-  #browse :is(th, td):not(:first-child) { width: 1%; }
+  :is(#mine, #browse) :is(th, td):not(:first-child) { width: 1%; }
+  #mine tr.selected { background: none; } /* they all are */
   td.title a { font-weight: 600; text-decoration: none; }
   td.title a:hover { text-decoration: underline; }
   td.title .sub { font-size: 13px; margin-top: 2px; }
@@ -75,10 +116,32 @@
   .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 32px 0 10px; }
   .section-head h2 { margin: 0; white-space: nowrap; }
   /* On the Shows page, the search box and category filter share a row. */
-  .section-head .controls { flex: 1 1 360px; flex-wrap: nowrap; margin: 0; }
-  .section-head .controls input[type=search] { min-width: 120px; }
+  .section-head .controls { flex: 1 1 360px; min-width: 0; flex-wrap: nowrap; margin: 0; }
+  .section-head .controls input[type=search] { min-width: 120px; width: 0; } /* flex sizes it, not its built-in width */
+  .section-head .controls select { min-width: 0; max-width: 45%; } /* it's as wide as its longest category, otherwise, past a phone's edge */
   .section-head :is(input, select) { box-sizing: border-box; height: 34px; }
   #browse { scroll-margin-top: 16px; }
+  /* iPhones zoom in on a text field with type smaller than 16px. */
+  @media (pointer: coarse) { input[type=search], select { font-size: 16px; } }
+
+  /* The show lists, on phones: a row is the show (title, DJ; no artwork) with
+     its next airing below the title, and Add or Remove at the right, rather
+     than three columns that squeeze the title. The headings are a row of
+     sort buttons. */
+  @media (max-width: 640px) {
+    :is(#mine, #browse) thead tr { display: flex; gap: 20px; padding: 8px 12px; }
+    :is(#mine, #browse) th { padding: 0; width: auto !important; }
+    :is(#mine, #browse) th.add-col { display: none; }
+    :is(#mine, #browse) tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--line); }
+    :is(#mine, #browse) tbody td { display: block; width: auto !important; padding: 0; border: 0; }
+    :is(#mine, #browse) td.title { grid-column: 1; overflow-wrap: anywhere; }
+    :is(#mine, #browse) td.title .art { display: none; } /* the text gets the room */
+    :is(#mine, #browse) td:nth-child(2) { grid-column: 1; font-size: 13px; color: var(--muted); } /* under the title */
+    :is(#mine, #browse) td:nth-child(2):not(:empty) { margin-top: 2px; }
+    :is(#mine, #browse) td.add-col { grid-column: 2; grid-row: 1 / span 2; }
+    :is(#mine, #browse) td:nth-child(2) br { display: none; } /* "Not on this week's schedule (never seen) delete", on one line */
+    :is(#mine, #browse) td:nth-child(2) form { margin-left: 6px; }
+  }
 
   /* Show artwork */
   .art { display: block; flex: none; object-fit: cover; border-radius: 6px; background: var(--line); }
@@ -92,9 +155,15 @@
 
   /* Live recording panel */
   .live-card { margin-top: 20px; padding: 18px 20px; border-color: var(--rec); box-shadow: 0 0 0 1px color-mix(in srgb, var(--rec) 25%, transparent); }
-  .live-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-  .live-head h2 { margin: 0; font-size: 19px; }
-  .live-head .slot { margin-left: auto; font-variant-numeric: tabular-nums; }
+  /* The title and DJ wrap, beside the time and badge, which stay at the top right. */
+  .live-head { display: flex; align-items: flex-start; gap: 12px; }
+  .live-title { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 2px 12px; flex-wrap: wrap; }
+  .live-title h2 { margin: 0; font-size: 19px; }
+  .live-meta { flex: none; display: flex; align-items: center; gap: 10px; margin-top: 3px; } /* level with the title's first line */
+  /* A recording's air date is long; on narrow windows it goes under the
+     RECORDING badge, rather than squeezing the title. */
+  @media (max-width: 640px) { .live-card.playback .live-meta { flex-direction: column-reverse; align-items: flex-end; gap: 4px; } .live-card.playback .live-meta .badge { align-self: flex-end; } }
+  .live-meta .slot { font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--muted) 75%, var(--card)); }
   /* Now playing, with the card's buttons at the bottom right. The buttons
      wrap onto the next line together, not one at a time. */
   /* Now playing and the play button share the row at any width: the song
@@ -112,7 +181,7 @@
   .badge.rec { color: var(--rec); }
   .badge.warn { color: #c98a00; }
   .badge .dot { width: 7px; height: 7px; margin-right: 5px; vertical-align: 1px; }
-  .progress { height: 4px; border-radius: 2px; background: var(--line); margin: 14px 0 8px; overflow: hidden; }
+  .progress { height: 8px; border-radius: 4px; background: var(--line); margin: 14px 0 8px; overflow: hidden; }
   .progress div { height: 100%; background: var(--rec); transition: width .5s; }
   .stats { font-size: 13px; font-variant-numeric: tabular-nums; }
   .now-playing { margin-top: 16px; display: grid; gap: 2px; }
@@ -127,18 +196,45 @@
   /* The play triangle's path is drawn right of the middle of its box, so
      its centre of mass is in the middle of the circle, which looks centred. */
   button.listen svg { grid-area: 1 / 1; width: 58%; height: 58%; fill: currentColor; }
-  button.listen .icon-stop, button.listen[aria-pressed=true] .icon-play { display: none; }
+  button.listen .icon-stop, button.listen .icon-pause, button.listen[aria-pressed=true] .icon-play { display: none; }
   button.listen[aria-pressed=true] .icon-stop { display: block; }
+  button.listen[data-mode=playback][aria-pressed=true] .icon-stop { display: none; }
+  button.listen[data-mode=playback][aria-pressed=true] .icon-pause { display: block; }
   button.listen[data-state=connecting] { animation: pulse 1.6s infinite; }
   button.listen:focus-visible { outline: 2px solid var(--rec); outline-offset: 2px; }
   button.end-rec { padding: 5px 12px; }
-  .live-card.onair { border-color: var(--line); box-shadow: none; }
+  .live-card.onair, .live-card.playback { border-color: var(--line); box-shadow: none; }
+  .progress.seek { position: relative; cursor: pointer; overflow: visible; }
+  .progress.seek .fill { border-radius: inherit; background: var(--fg); transition: none; }
+  /* Song changes: a thin line, in a wider strip that's easier to hover,
+     with the song's title and artist above it on hover. */
+  .progress.seek .mark { position: absolute; top: -4px; bottom: -4px; width: 9px; margin-left: -4.5px; }
+  .progress.seek .mark::before { content: ""; position: absolute; left: 3.5px; top: 4px; bottom: 4px; width: 2px; background: color-mix(in srgb, var(--card) 75%, var(--fg)); }
+  .progress.seek .mark:is(:hover, .show)::before { left: 3px; width: 3px; top: 1px; bottom: 1px; background: var(--fg); }
+  /* The tooltip is always there, hidden; it shows at once on hover, and fades
+     in when it shows by itself as playback reaches a song (.show), and out. */
+  .progress.seek .mark::after { content: attr(data-label); position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 1; max-width: 18em; width: max-content; padding: 4px 8px; border-radius: 6px; background: var(--fg); color: var(--card); font-size: 12px; line-height: 1.35; pointer-events: none;
+    opacity: 0; visibility: hidden; transition: opacity .4s, visibility 0s .4s; }
+  .progress.seek .mark:is(:hover, .show)::after { opacity: 1; visibility: visible; transition: opacity .4s; }
+  .progress.seek .mark:hover::after { transition: none; }
+  @media (prefers-reduced-motion: reduce) { .progress.seek .mark::after { transition: none !important; } }
+  .progress.seek .mark.left::after { left: 0; transform: none; }
+  .progress.seek .mark.right::after { left: auto; right: 0; transform: none; }
+  .progress.seek:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .live-card.onair .progress div { background: var(--muted); }
   /* Site navigation */
   .site-nav { max-width: 1100px; margin: 0 auto; padding: 20px 20px 0; display: flex; gap: 20px; align-items: baseline; flex-wrap: wrap; }
   .site-nav a { font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); padding-bottom: 2px; border-bottom: 2px solid transparent; }
   .site-nav a:hover { color: var(--fg); }
   .site-nav a[aria-current=page] { color: var(--fg); border-bottom-color: var(--accent); }
+  /* The theme toggle, at the footer's right end: a moon on the light theme,
+     a sun on the dark one. */
+  button.theme-toggle { flex: none; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); }
+  button.theme-toggle:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 8%, transparent); }
+  button.theme-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.theme-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  button.theme-toggle .icon-sun, button.theme-toggle[data-dark] .icon-moon { display: none; }
+  button.theme-toggle[data-dark] .icon-sun { display: block; }
   main { padding-top: 16px; }
   main:focus { outline: none; }
 
@@ -148,6 +244,7 @@
   .live-wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
   html { scroll-padding-top: 72px; } /* links to a spot on the page land below the bar */
   #player { position: fixed; top: 0; left: 0; right: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); box-shadow: 0 2px 12px rgb(0 0 0 / .08); transform: translateY(-100%); visibility: hidden; transition: transform .2s ease, visibility .2s; }
+  #player { padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); }
   #player.shown { transform: none; visibility: visible; }
   @media (prefers-reduced-motion: reduce) { #player { transition: none; } }
   .player-bar .show-link { all: unset; cursor: pointer; display: block; flex: 1; min-width: 0; line-height: 1.3; }
@@ -162,19 +259,59 @@
   /* Recordings page */
   main > .section-head:first-child { margin-top: 8px; } /* the search row, at the top of the Shows page; lined up with the other pages */
   .rec-list .show { flex: 1; min-width: 0; }
-  .rec-list .sub { font-size: 13px; overflow-wrap: anywhere; }
+  .rec-list a.rec-link { flex: 1; min-width: 0; display: flex; gap: 14px; align-items: baseline; color: inherit; text-decoration: none; }
+  .rec-list a.rec-link:hover strong { text-decoration: underline; }
+  .rec-list a.rec-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  .rec-tags { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   /* Logs page */
   .log-note { font-size: 13px; margin: 8px 0 12px; }
   ol.log { list-style: none; margin: 0; padding: 10px 0; max-height: 70vh; overflow: auto; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   ol.log li { display: grid; grid-template-columns: 11em 1fr; gap: 12px; padding: 1px 14px; }
   ol.log time { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
   ol.log span { white-space: pre-wrap; overflow-wrap: anywhere; }
-  #recordings > :first-child { margin-top: 8px; } /* lined up with the top of the other pages */
+  main > #recordings:first-child > :first-child { margin-top: 8px; } /* a details page, lined up with the top of the other pages */
   .rec-list li { align-items: center; }
-  .rec-actions { min-width: 8.5em; text-align: right; }
+  /* On narrow windows a recording's date goes above its show. */
+  @media (max-width: 640px) { .rec-list a.rec-link { flex-direction: column; gap: 2px; } .rec-list .time { min-width: 0; } }
+  /* The row under the pointer, in the recording and show lists, a shade off
+     the card (lighter on the dark theme, darker on the light one), so it's
+     clear which show a button is on. The cards clip it to their corners. */
+  .card:has(> .rec-list), :is(#mine, #browse) > .card { overflow: hidden; }
+  @media (hover: hover) {
+    .rec-list li:hover, :is(#mine, #browse) tbody tr:hover { background: color-mix(in srgb, var(--fg) 4%, var(--card)); }
+  }
   button.danger { color: var(--rec); }
   button.danger:hover { border-color: var(--rec); }
-  .rec-list .info { text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
+  /* A recording's details page */
+  .back { margin: 8px 0 10px; font-size: 13px; }
+  .back a { color: var(--muted); text-decoration: none; }
+  .back a:hover { color: var(--fg); }
+  .rec-detail { padding: 16px 18px; }
+  .rec-detail-top { display: flex; gap: 18px; align-items: flex-start; }
+  .rec-detail-main { flex: 1; min-width: 0; }
+  .rec-detail-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .rec-detail-head h2 { margin: 0; font-size: 20px; }
+  .rec-detail-head h2 a { text-decoration: none; }
+  .rec-detail-head h2 a:hover { text-decoration: underline; }
+  .rec-detail-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .rec-detail-foot { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line); }
+  button.listen.play-rec { width: 30px; height: 30px; } /* the live card's Play, smaller */
+  .rec-detail h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 22px 0 6px; }
+  dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 14px 0 0; font-size: 14px; }
+  dl.facts dt { color: var(--muted); }
+  dl.facts dd { margin: 0; min-width: 0; font-variant-numeric: tabular-nums; }
+  dl.facts .description { white-space: pre-line; }
+  .path { overflow-wrap: anywhere; }
+  .table-wrap { overflow-x: auto; }
+  .details-table { font-size: 13px; }
+  .details-table th, .details-table td { padding: 6px 10px; }
+  .details-table th:first-child, .details-table td:first-child { padding-left: 0; }
+  .pager { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 10px; font-size: 13px; }
+  .pager a { text-decoration: none; }
+  .pager a:hover { text-decoration: underline; }
+  .details-table .tip { text-decoration: underline dotted color-mix(in srgb, var(--muted) 60%, transparent); text-underline-offset: 3px; cursor: help; } /* more in its title */
+  .details-table button.song-jump { font-size: inherit; color: inherit; font-variant-numeric: tabular-nums; }
+  .details-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 </style>
 <script>
   // Artwork comes straight from Spinitron and Flickr, and some links are dead.
@@ -206,16 +343,21 @@
 <body>
 <div class="live-wrap"><div id="live" aria-live="polite">{{template "live" .Live}}</div></div>
 <nav class="site-nav" aria-label="Site">
-  <a href="/"{{if eq .Page "home"}} aria-current="page"{{end}}>Upcoming</a>
-  <a href="/shows"{{if eq .Page "shows"}} aria-current="page"{{end}}>Shows</a>
-  <a href="/recordings"{{if eq .Page "recordings"}} aria-current="page"{{end}}>Recordings</a>
+  <a href="/recordings"{{if or (eq .Page "recordings") (eq .Page "recording")}} aria-current="page"{{end}}>Recordings</a>
+  <a href="/shows"{{if or (eq .Page "shows") (eq .Page "show")}} aria-current="page"{{end}}>Shows</a>
   <a href="/logs"{{if eq .Page "logs"}} aria-current="page"{{end}}>Logs</a>
 </nav>
 <div id="player">{{template "player" .Live.Player}}</div>
 <main id="page" data-page="{{.Page}}" tabindex="-1">
-{{if eq .Page "home"}}{{template "home" .Data}}{{else if eq .Page "shows"}}{{template "shows" .Data}}{{else if eq .Page "recordings"}}{{template "recordings" .Data}}{{else if eq .Page "logs"}}{{template "logs" .Data}}{{end}}
+{{if eq .Page "shows"}}{{template "shows" .Data}}{{else if eq .Page "recordings"}}{{template "recordings" .Data}}{{else if eq .Page "recording"}}{{template "recording" .Data}}{{else if eq .Page "show"}}{{template "show" .Data}}{{else if eq .Page "logs"}}{{template "logs" .Data}}{{end}}
 </main>
-<footer class="site-footer">Schedule and audio come from <a href="https://wcbn.org">wcbn.org</a>.</footer>
+<footer class="site-footer">
+  <span>Schedule and audio come from <a href="https://wcbn.org">wcbn.org</a>.</span>
+  <button type="button" class="theme-toggle" aria-label="Switch to the dark theme" title="Switch to the dark theme">
+    <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+  </button>
+</footer>
 <script>
   // The page is one document for the whole visit: links to other pages of the
   // app swap the contents of <main> (see navigate below), so the player bar,
@@ -273,14 +415,35 @@
   // scrolled out of view. Every Listen button (the card's, or the cards' when
   // recordings overlap, and the bar's) shows the same state. Stopping
   // disconnects rather than pausing, so the next Listen picks up at the live
-  // edge. ?listen=1 in the URL records that it's playing, so reloading the
-  // page resumes it.
+  // edge. If the stream fails or drops, it reconnects, waiting longer each
+  // time (retryDelays), before giving up. ?listen=1 in the URL records that
+  // it's playing, so reloading the page resumes it.
+  //
+  // Play on the Recordings page plays a recording back in the same player,
+  // with the live card and bar showing it instead (playback, below) until
+  // Back to live. While it plays, the Listen buttons pause and resume it.
+  // Where it got to is saved in the browser, and it resumes from there;
+  // ?play=<id> in the URL records which one is up, for a reload, with
+  // &paused=1 while it's paused, so a reload brings it back paused.
   const player = new Audio();
   player.preload = "none";
   let listening = false, listenState = "";
+  const retryDelays = [1000, 2000, 4000]; // ms before each reconnect attempt
+  let retries = 0, retryTimer = 0;
   const live = document.getElementById("live"), playerBox = document.getElementById("player");
+  let playback = null, lastLive; // see Playing back a recording, below
   function syncPlayer() {
     document.querySelectorAll("#live button.listen, #player button.listen").forEach(b => {
+      if (playback) {
+        const playing = !player.paused;
+        b.dataset.mode = "playback";
+        b.setAttribute("aria-pressed", playing);
+        b.setAttribute("aria-label", playing ? "Pause" : "Play");
+        b.title = b.getAttribute("aria-label");
+        b.dataset.state = playing && listenState === "connecting" ? "connecting" : "";
+        return;
+      }
+      delete b.dataset.mode;
       b.setAttribute("aria-pressed", listening);
       const label = !listening ? "Listen to WCBN live" : listenState === "playing" ? "Stop listening" : "Connecting… (press to stop)";
       b.setAttribute("aria-label", label);
@@ -293,11 +456,24 @@
     playerBox.classList.toggle("shown", !e.isIntersecting && e.boundingClientRect.top < 0);
   }, { rootMargin: "-56px 0px 0px 0px" }).observe(live);
   function setListenParam(on) {
-    const url = new URL(location);
-    if (on) url.searchParams.set("listen", "1"); else url.searchParams.delete("listen");
-    history.replaceState(history.state, "", url);
+    history.replaceState(history.state, "", withPlayerParam(new URL(location), on));
+  }
+  // withPlayerParam sets url's listen or play parameters for what the
+  // player is doing: listening (if listen), playing back a recording (paused
+  // or not), or neither.
+  function withPlayerParam(url, listen = listening) {
+    for (const p of ["listen", "play", "paused"]) url.searchParams.delete(p);
+    if (listen) url.searchParams.set("listen", "1");
+    else if (playback) {
+      url.searchParams.set("play", playback.id);
+      if (player.paused) url.searchParams.set("paused", "1");
+    }
+    return url;
   }
   function stopListening() {
+    clearTimeout(retryTimer);
+    retryTimer = 0;
+    retries = 0;
     player.pause();
     player.removeAttribute("src");
     player.load();
@@ -306,24 +482,223 @@
     syncPlayer();
   }
   function startListening() {
+    if (playback) endPlayback();
     listening = true;
-    listenState = "connecting";
+    retries = 0;
     setListenParam(true);
+    loadStream();
+  }
+  function loadStream() {
+    listenState = "connecting";
     player.src = "/listen?t=" + Date.now(); // never reuse a cached response
     player.play().catch(err => {
+      if (err.name === "AbortError") return; // stopped, or reconnecting
       // NotAllowedError: the browser blocked autoplay on reload; the button still works.
-      if (err.name !== "AbortError" && err.name !== "NotAllowedError") alert("Couldn't play the stream: " + err.message);
-      stopListening();
+      if (err.name === "NotAllowedError") stopListening();
+      else streamFailed("Couldn't play the stream: " + err.message);
     });
     syncPlayer();
   }
-  player.addEventListener("playing", () => { listenState = "playing"; syncPlayer(); });
+  // streamFailed reconnects after the next delay, or, once they're used up,
+  // stops, showing message if there is one. The error event and play()'s
+  // rejection can both report the same failure; the first schedules the retry.
+  function streamFailed(message) {
+    if (!listening || retryTimer) return;
+    if (retries >= retryDelays.length) {
+      stopListening();
+      if (message) alert(message);
+      return;
+    }
+    listenState = "connecting";
+    syncPlayer();
+    retryTimer = setTimeout(() => { retryTimer = 0; if (listening) loadStream(); }, retryDelays[retries++]);
+  }
+  player.addEventListener("playing", () => { retries = 0; listenState = "playing"; syncPlayer(); });
   player.addEventListener("waiting", () => { listenState = "connecting"; syncPlayer(); });
-  player.addEventListener("ended", stopListening);
-  player.addEventListener("error", () => { if (listening) stopListening(); });
+  player.addEventListener("pause", syncPlayer);
+  player.addEventListener("ended", syncPlayer);
+  player.addEventListener("ended", () => streamFailed()); // a live stream only ends if the connection drops
+  player.addEventListener("error", () => {
+    if (playback && player.getAttribute("src")) {
+      endPlayback();
+      alert("Couldn't play the recording.");
+    } else streamFailed();
+  });
+
+  // Playing back a recording. playback is the recording's songs, with their
+  // start and end in ms, and its length; lastLive is the live card and bar
+  // from the server, kept up to date meanwhile, for Back to live.
+  lastLive = { live: live.innerHTML, player: playerBox.innerHTML };
+  // startPlayback plays recording id from where it was left, or from ms;
+  // or, if paused, shows it there, waiting for Play.
+  async function startPlayback(id, ms, paused = false) {
+    let info;
+    try {
+      const res = await fetch(`/recordings/${id}/play`, { headers: { Accept: "application/json" } });
+      if (!res.ok) throw new Error((await res.text()).trim() || res.statusText);
+      info = await res.json();
+    } catch (err) {
+      alert("Couldn't play the recording: " + err.message);
+      return;
+    }
+    if (listening) stopListening();
+    if (playback) savePosition();
+    // Start where it was left, unless that was the end.
+    let from = ms ?? savedPosition(id);
+    if (from >= info.durationMs - 1000) from = 0;
+    playback = { id, songs: info.songs || [], duration: info.durationMs, song: undefined, pending: from, saved: from };
+    morph(live, info.card);
+    morph(playerBox, info.player);
+    listenState = "connecting";
+    player.src = info.audio + (from ? `#t=${from / 1000}` : "");
+    setListenParam(false);
+    if (!paused) player.play().catch(err => {
+      // NotAllowedError: the browser blocked autoplay on reload; the card waits, paused, for Play.
+      if (err.name !== "AbortError" && err.name !== "NotAllowedError") alert("Couldn't play the recording: " + err.message);
+    });
+    showPosition();
+    syncPlayer();
+  }
+  // The start position is set once the audio's loaded, in case the browser
+  // ignores the #t= in the URL.
+  player.addEventListener("loadedmetadata", () => {
+    if (playback?.pending == null) return;
+    if (Math.abs(player.currentTime * 1000 - playback.pending) > 1000) player.currentTime = playback.pending / 1000;
+    playback.pending = null;
+  });
+  // Where playback of each recording got to is kept in this browser's
+  // localStorage, as ms under "wcbn-position-<id>"; storage may be off or
+  // full, in which case playback starts from the beginning.
+  const positionKey = id => `wcbn-position-${id}`;
+  function savedPosition(id) {
+    try { return Number(localStorage.getItem(positionKey(id))) || 0; } catch { return 0; }
+  }
+  function forgetPosition(id) {
+    try { localStorage.removeItem(positionKey(id)); } catch {}
+  }
+  // savePosition saves where playback is, if it's moved.
+  function savePosition() {
+    if (!playback || playback.pending != null) return;
+    let ms = Math.round(player.currentTime * 1000);
+    if (player.ended) ms = 0; // finished: next time starts over
+    if (ms === playback.saved) return;
+    playback.saved = ms;
+    if (!ms) forgetPosition(playback.id);
+    else try { localStorage.setItem(positionKey(playback.id), ms); } catch {}
+  }
+  let lastSave = 0;
+  player.addEventListener("timeupdate", () => {
+    if (playback && !player.paused && Date.now() - lastSave > 5000) { lastSave = Date.now(); savePosition(); }
+  });
+  for (const ev of ["pause", "seeked", "ended"]) player.addEventListener(ev, () => savePosition());
+  for (const ev of ["play", "pause"]) player.addEventListener(ev, () => { if (playback) setListenParam(false); }); // &paused=1, or not
+  addEventListener("pagehide", () => savePosition());
+  document.addEventListener("visibilitychange", () => { if (document.hidden) savePosition(); });
+  function endPlayback() {
+    savePosition();
+    playback = null;
+    setListenParam(false);
+    player.pause();
+    player.removeAttribute("src");
+    player.load();
+    morph(live, lastLive.live);
+    morph(playerBox, lastLive.player);
+    syncPlayer();
+  }
+  const clockTime = ms => {
+    const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = String(s % 60).padStart(2, "0");
+    return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+  };
+  // showPosition updates the card and bar for where the audio is: the
+  // progress bar, the time, and the song at that point.
+  function showPosition() {
+    if (!playback) return;
+    const ms = playback.pending ?? player.currentTime * 1000;
+    const bar = live.querySelector(".progress.seek");
+    if (bar) {
+      bar.firstElementChild.style.width = `${playback.duration ? Math.min(100, ms * 100 / playback.duration) : 0}%`;
+      bar.setAttribute("aria-valuenow", Math.round(ms));
+      bar.setAttribute("aria-valuetext", clockTime(ms));
+    }
+    const pos = live.querySelector(".playback .position");
+    if (pos) pos.textContent = clockTime(ms);
+    const song = playback.songs.findLast(s => s.start <= ms) || playback.songs[0];
+    if (song === playback.song) return;
+    // Playing on into the next song shows its line's tooltip for a while;
+    // starting, or jumping to a song, doesn't.
+    if (playback.song !== undefined && !playback.seeking && !player.paused) flashMark(song);
+    playback.song = song;
+    const title = live.querySelector(".playback .now-playing .song"), artist = live.querySelector(".playback .now-playing .artist");
+    if (title) title.textContent = song?.title || "No song information";
+    if (artist) {
+      // The artist's names, linked to Wikipedia where they can be (song.parts).
+      artist.replaceChildren(...(song?.parts || (song?.artist ? [{ text: song.artist }] : [])).map(p => {
+        if (!p.url) return document.createTextNode(p.text);
+        const a = document.createElement("a");
+        Object.assign(a, { href: p.url, target: "_blank", rel: "noopener", title: p.text + " on Wikipedia", textContent: p.text });
+        return a;
+      }));
+    }
+    const bar2 = playerBox.querySelector(".player-song");
+    if (bar2) bar2.textContent = song ? song.title + (song.artist ? " — " + song.artist : "") : "Recording";
+  }
+  player.addEventListener("timeupdate", showPosition);
+  player.addEventListener("seeking", () => { if (playback) playback.seeking = true; });
+  player.addEventListener("seeked", () => {
+    showPosition();
+    if (playback) playback.seeking = false;
+  });
+  // flashMark shows the tooltip of song's line on the progress bar for a few
+  // seconds, as if hovered.
+  let flashTimer = 0;
+  function flashMark(song) {
+    clearTimeout(flashTimer);
+    live.querySelectorAll(".progress.seek .mark.show").forEach(m => m.classList.remove("show"));
+    const mark = song && live.querySelector(`.progress.seek .mark[data-start="${song.start}"]`);
+    if (!mark) return;
+    mark.classList.add("show");
+    flashTimer = setTimeout(() => mark.classList.remove("show"), 4000);
+  }
+  function seekTo(ms) {
+    if (!playback || !playback.duration) return;
+    ms = Math.max(0, Math.min(ms, playback.duration));
+    // Before the audio's loaded, that's where it'll start (see loadedmetadata).
+    if (playback.pending != null) playback.pending = ms;
+    else player.currentTime = ms / 1000;
+    showPosition();
+  }
+  live.addEventListener("click", e => {
+    const bar = e.target.closest(".progress.seek");
+    if (!bar || !playback) return;
+    const r = bar.getBoundingClientRect();
+    seekTo((e.clientX - r.left) / r.width * playback.duration);
+  });
+  live.addEventListener("keydown", e => {
+    if (!playback || !e.target.matches(".progress.seek")) return;
+    const step = { ArrowLeft: -10000, ArrowRight: 10000, PageDown: -60000, PageUp: 60000 }[e.key];
+    if (e.key === "Home") seekTo(0);
+    else if (e.key === "End") seekTo(playback.duration);
+    else if (step) seekTo((playback.pending ?? player.currentTime * 1000) + step);
+    else return;
+    e.preventDefault();
+  });
   document.addEventListener("click", e => {
     if (e.target.closest("#live button.listen, #player button.listen")) {
-      if (listening) stopListening(); else startListening();
+      if (playback) {
+        if (player.paused) player.play().catch(() => {}); else player.pause();
+      } else if (listening) stopListening(); else startListening();
+    } else if (e.target.closest("button.play-rec")) {
+      startPlayback(e.target.closest("button.play-rec").dataset.id);
+    } else if (e.target.closest("button.song-jump")) {
+      // A song's time on a recording's details page: play from it, in the
+      // recording already playing, or by starting it.
+      const song = e.target.closest("button.song-jump").dataset, ms = Number(song.start);
+      if (playback && String(playback.id) === song.id) {
+        seekTo(ms);
+        if (player.paused) player.play().catch(() => {});
+      } else startPlayback(song.id, ms);
+    } else if (e.target.closest("#live button.back-live")) {
+      endPlayback();
     } else if (e.target.closest("#player .show-link")) {
       scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     }
@@ -342,7 +717,9 @@
     page = pages[main.dataset.page] || {};
     page.init?.(main);
     document.querySelectorAll(".site-nav a").forEach(a => {
-      if (a.pathname === location.pathname) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+      // A page under a section (a recording's details) counts as that section.
+      const here = location.pathname === a.pathname || (a.pathname !== "/" && location.pathname.startsWith(a.pathname + "/"));
+      if (here) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
   }
   async function navigate(url, { push, scroll = 0 }) {
@@ -361,7 +738,7 @@
     const main = doc.getElementById("page");
     if (!main) { location.assign(url); return; }
     main.querySelectorAll("img.art").forEach(fixArt);
-    if (listening) url.searchParams.set("listen", "1");
+    withPlayerParam(url);
     if (push) {
       history.replaceState({ scroll: scrollY }, "", location.href); // to come back to
       history.pushState({ scroll: 0 }, "", url);
@@ -379,9 +756,8 @@
     const a = e.target.closest("a[href]");
     if (!a || a.target || a.hasAttribute("download") || a.origin !== location.origin) return;
     const url = new URL(a.href);
-    url.searchParams.delete("listen");
     const here = new URL(location);
-    here.searchParams.delete("listen");
+    for (const p of ["listen", "play", "paused"]) { url.searchParams.delete(p); here.searchParams.delete(p); }
     if (url.hash && url.pathname === here.pathname && url.search === here.search) return; // a spot on this page
     e.preventDefault();
     navigate(url, { push: true });
@@ -399,11 +775,17 @@
     row.classList.toggle("selected", record);
     row.querySelector(".toggle-form input[name=record]").value = record ? "0" : "1";
     const button = row.querySelector(".toggle");
-    const title = row.querySelector("td.title").dataset.title;
+    const title = row.querySelector("td.title")?.dataset.title ?? row.dataset.title; // a row in the list, or a show's page
     button.textContent = record ? "Remove" : "Add";
     button.setAttribute("aria-label", (record ? "Stop recording " : "Record ") + title);
     const del = row.querySelector(".delete-form"); // only shows not on the schedule have one
     if (del) del.hidden = record;
+    // On the Shows page, the row moves to the other list.
+    const list = row.tagName === "TR" && document.querySelector(record ? "#mine tbody" : "#browse tbody");
+    if (list) {
+      list.append(row);
+      page.arrange?.();
+    }
   }
   // Add / Remove in the show list.
   document.addEventListener("submit", async e => {
@@ -455,13 +837,19 @@
     try {
       const res = await fetch(form.action, { method: "POST", headers: { Accept: "application/json" } });
       if (!res.ok) throw new Error((await res.text()).trim() || res.statusText);
-      await page.refresh?.();
+      forgetPosition(form.dataset.id);
+      if (form.dataset.then) {
+        // From its details page, which is gone now: on to the list instead.
+        const url = withPlayerParam(new URL(form.dataset.then, location));
+        history.replaceState({ scroll: 0 }, "", url);
+        await navigate(url, { push: false });
+      } else await page.refresh?.();
     } catch (err) {
       alert("Couldn't delete the recording: " + err.message);
       button.disabled = false;
     }
   });
-  // End recording, on the Recordings page: confirm, then stop it; it shows
+  // End recording, on a recording's details page: confirm, then stop it; it shows
   // as saving until its files are written (and the live card as SAVING).
   document.addEventListener("submit", async e => {
     const form = e.target.closest(".stop-form");
@@ -483,8 +871,11 @@
   // closed while the tab is hidden; on reconnecting, the server sends the
   // current state straight away.
   function update(data) {
-    morph(live, data.live);
-    morph(playerBox, data.player);
+    lastLive = { live: data.live, player: data.player };
+    if (!playback) {
+      morph(live, data.live);
+      morph(playerBox, data.player);
+    }
     syncPlayer(); // same task as the morphs, so their labels never show
     page.update?.(data);
   }
@@ -508,19 +899,10 @@
   }
 
   // The home page: upcoming recordings.
-  pages.home = {
-    selectionChanged(data) {
-      morph(document.getElementById("upcoming"), data.upcoming);
-    },
-    update(data) {
-      morph(document.getElementById("upcoming"), data.upcoming);
-    },
-  };
-
   // The shows page: the list of every show, to search, sort, and add or remove.
   pages.shows = {
     init(main) {
-      const browse = main.querySelector("#browse");
+      const browse = main.querySelector("#browse"), mine = main.querySelector("#mine");
 
       // Client-side filtering.
       const q = main.querySelector("#q"), cat = main.querySelector("#category");
@@ -534,53 +916,81 @@
       }
       [q, cat].forEach(el => el.addEventListener("input", filter));
 
-      // Column sorting. Cells carry a data-sort value; empty values always sort
-      // last, and ties fall back to the show title. The choice is remembered.
-      const tbody = browse.querySelector("tbody");
-      const headers = [...browse.querySelectorAll("th")];
+      // Column sorting, in each list. Cells carry a data-sort value; empty
+      // values always sort last, and ties fall back to the show title. Each
+      // list remembers its choice, and starts by next airing.
       const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
-      function sortBy(col, dir) {
-        const button = headers[col].querySelector("button.sort");
-        const numeric = button.dataset.type === "number";
-        const sign = dir === "desc" ? -1 : 1;
-        const value = row => row.cells[col].dataset.sort ?? "";
-        const rows = [...tbody.rows].sort((a, b) => {
-          const x = value(a), y = value(b);
-          if (x === "" || y === "") {
-            if (x !== y) return x === "" ? 1 : -1;
-          } else {
-            const c = numeric ? Number(x) - Number(y) : collator.compare(x, y);
-            if (c !== 0) return sign * c;
-          }
-          return collator.compare(a.querySelector("td.title").dataset.sort, b.querySelector("td.title").dataset.sort);
+      function sortable(section, key) {
+        const tbody = section.querySelector("tbody"), headers = [...section.querySelectorAll("th")];
+        let sorted = { col: 1, dir: "asc" };
+        function sortBy(col, dir, remember = true) {
+          const button = headers[col]?.querySelector("button.sort");
+          if (!button) return;
+          const numeric = button.dataset.type === "number";
+          const sign = dir === "desc" ? -1 : 1;
+          const value = row => row.cells[col].dataset.sort ?? "";
+          const rows = [...tbody.rows].sort((a, b) => {
+            const x = value(a), y = value(b);
+            if (x === "" || y === "") {
+              if (x !== y) return x === "" ? 1 : -1;
+            } else {
+              const c = numeric ? Number(x) - Number(y) : collator.compare(x, y);
+              if (c !== 0) return sign * c;
+            }
+            return collator.compare(a.querySelector("td.title").dataset.sort, b.querySelector("td.title").dataset.sort);
+          });
+          tbody.append(...rows);
+          headers.forEach((th, i) => {
+            if (th.querySelector("button.sort")) th.setAttribute("aria-sort", i === col ? (dir === "desc" ? "descending" : "ascending") : "none");
+          });
+          if (remember) try { localStorage.setItem(key, JSON.stringify({ col, dir })); } catch {}
+          sorted = { col, dir };
+        }
+        headers.forEach((th, col) => {
+          const button = th.querySelector("button.sort");
+          if (!button) return; // the Add/Remove column isn't sortable
+          button.addEventListener("click", () => {
+            const current = th.getAttribute("aria-sort");
+            const dir = current === "none" ? (button.dataset.first || "asc") : current === "ascending" ? "desc" : "asc";
+            sortBy(col, dir);
+          });
         });
-        tbody.append(...rows);
-        headers.forEach((th, i) => {
-          if (th.querySelector("button.sort")) th.setAttribute("aria-sort", i === col ? (dir === "desc" ? "descending" : "ascending") : "none");
-        });
-        localStorage.setItem("wcbn-sort-5", JSON.stringify({ col, dir })); // "-5": column numbers changed when Category went
+        // The last sort, or next airing.
+        let saved = null;
+        try { saved = JSON.parse(localStorage.getItem(key)); } catch {}
+        return {
+          sortBy,
+          resort: () => sortBy(sorted.col, sorted.dir, false),
+          restore: override => {
+            const s = override || saved;
+            if (s && headers[s.col]?.querySelector("button.sort")) sortBy(s.col, s.dir, !!override);
+            else sortBy(1, "asc", false);
+          },
+        };
       }
-      headers.forEach((th, col) => {
-        const button = th.querySelector("button.sort");
-        if (!button) return; // the Add column isn't sortable
-        button.addEventListener("click", () => {
-          const current = th.getAttribute("aria-sort");
-          const dir = current === "none" ? (button.dataset.first || "asc") : current === "ascending" ? "desc" : "asc";
-          sortBy(col, dir);
-        });
-      });
-      // Restore the last sort (?sort=<column>&dir=asc|desc overrides it, for links).
+      const yours = sortable(mine, "wcbn-sort-mine"), others = sortable(browse, "wcbn-sort-browse");
+      // ?sort=<column>&dir=asc|desc sets Add shows' sort, for links.
       const params = new URLSearchParams(location.search);
-      let saved = null;
-      try { saved = JSON.parse(localStorage.getItem("wcbn-sort-5")); } catch {}
-      if (params.has("sort")) saved = { col: Number(params.get("sort")), dir: params.get("dir") === "desc" ? "desc" : "asc" };
-      if (saved && headers[saved.col]?.querySelector("button.sort")) sortBy(saved.col, saved.dir);
+      yours.restore();
+      others.restore(params.has("sort") ? { col: Number(params.get("sort")), dir: params.get("dir") === "desc" ? "desc" : "asc" } : null);
+
+      // After a show moves between the lists: each as sorted (and Add shows
+      // as filtered), and Your shows' "none yet" note if it's empty.
+      this.arrange = () => {
+        const rows = [...mine.querySelector("tbody").rows];
+        rows.forEach(row => { row.hidden = false; });
+        mine.querySelector(".card").hidden = !rows.length;
+        mine.querySelector(".empty").hidden = !!rows.length;
+        yours.resort();
+        others.resort();
+        filter();
+      };
     },
     // Keep the rows in step with selections made elsewhere (the On air
     // panel's Record button, another tab) and with what's being recorded.
     update(data) {
       const selected = new Set(data.selectedShows.map(String)), recording = new Set(data.recordingShows.map(String));
-      document.querySelectorAll("#browse tbody tr").forEach(row => {
+      document.querySelectorAll("#mine tbody tr, #browse tbody tr").forEach(row => {
         const id = row.id.replace("show-", "");
         setRowState(id, selected.has(id));
         const tag = row.querySelector(".rec-tag");
@@ -589,16 +999,26 @@
     },
   };
 
-  // The recordings page. It's redrawn from the server when the recordings in
-  // progress change (one starts, is ended, or is saved), or after a Delete.
+  // The recordings page, a recording's details page, and a show's page. Each is redrawn
+  // from the server when the recordings in progress change (one starts, is
+  // ended, or is saved), or after a Delete.
   let recordingsDraw = 0;
   pages.recordings = {
+    // The upcoming list, above the recordings (not on a details page).
+    showUpcoming(data) {
+      const upcoming = document.getElementById("upcoming");
+      if (upcoming) morph(upcoming, data.upcoming);
+    },
+    selectionChanged(data) {
+      this.showUpcoming(data);
+    },
     update(data) {
+      this.showUpcoming(data);
       if (data.recordings !== document.getElementById("recordings")?.dataset.state) this.refresh().catch(() => {}); // the next change tries again
     },
     async refresh() {
       const n = ++recordingsDraw;
-      const res = await fetch(location.pathname, { headers: { Accept: "text/html" } });
+      const res = await fetch(location.pathname + location.search, { headers: { Accept: "text/html" } }); // the same page of recordings
       if (!res.ok) throw new Error(res.statusText);
       const doc = new DOMParser().parseFromString(await res.text(), "text/html");
       const fresh = doc.getElementById("recordings"), here = document.getElementById("recordings");
@@ -607,6 +1027,7 @@
       morph(here, fresh.innerHTML);
     },
   };
+  pages.recording = pages.show = pages.recordings;
 
   // The logs page: new lines are added at the bottom as they're logged, from
   // its own event stream, open while the page is. The list follows new lines
@@ -628,11 +1049,34 @@
     },
   };
 
+  // The theme toggle switches to the other theme and saves it, or, when
+  // that's the system's own, forgets the choice so the theme follows the
+  // system again. Its icon and label show the theme it switches to.
+  const themeToggle = document.querySelector("button.theme-toggle"), systemDark = matchMedia("(prefers-color-scheme: dark)");
+  const isDark = () => document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : systemDark.matches;
+  function syncThemeToggle() {
+    themeToggle.toggleAttribute("data-dark", isDark());
+    const label = `Switch to the ${isDark() ? "light" : "dark"} theme`;
+    themeToggle.setAttribute("aria-label", label);
+    themeToggle.title = label;
+  }
+  themeToggle.addEventListener("click", () => {
+    const theme = isDark() ? "light" : "dark";
+    const saved = (theme === "dark") === systemDark.matches ? null : theme;
+    applyTheme(saved);
+    try { if (saved) localStorage.setItem("wcbn-theme", saved); else localStorage.removeItem("wcbn-theme"); } catch {}
+    syncThemeToggle();
+  });
+  systemDark.addEventListener("change", () => { applyTheme(document.documentElement.dataset.theme); syncThemeToggle(); });
+  syncThemeToggle();
+
   showPage();
   connect();
   document.addEventListener("visibilitychange", connect);
   // Resume after a reload.
-  if (new URLSearchParams(location.search).has("listen")) startListening();
+  const resume = new URLSearchParams(location.search);
+  if (resume.has("listen")) startListening();
+  else if (resume.get("play")) startPlayback(resume.get("play"), undefined, resume.has("paused"));
 </script>
 </body>
 </html>
@@ -644,8 +1088,8 @@
 <div class="player-bar">
   {{template "art" (art .Image .StationLogo "art-sm" false)}}
   <button type="button" class="show-link player-text" title="Back to the top">
-    <span class="player-show">{{if .Recording}}<span class="badge rec"><span class="dot"></span>REC</span>{{end}}<strong>{{.Title}}</strong>{{with .DJ}} <span class="muted">with {{.}}</span>{{end}}</span>
-    <span class="player-song muted">{{if .Song}}{{.Song}}{{with .Artist}} — {{.}}{{end}}{{else}}Live stream{{end}}</span>
+    <span class="player-show">{{if .Recording}}<span class="badge rec"><span class="dot"></span>LIVE REC</span>{{end}}<strong>{{.Title}}</strong>{{with .DJ}} <span class="muted">with {{.}}</span>{{end}}</span>
+    <span class="player-song muted">{{if .Song}}{{.Song}}{{with .Artist}} — {{.}}{{end}}{{else if .Playback}}Recording{{else}}Live stream{{end}}</span>
   </button>
   {{template "listen"}}
 </div>

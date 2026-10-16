@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"wcbn-recorder/internal/httpx"
 	"wcbn-recorder/internal/spinitron"
@@ -108,8 +109,27 @@ func fetchStationStatus(ctx context.Context, streamURL string) (stationStatus, e
 	// The listen URL can differ in host and port from ours; match the mount.
 	for _, s := range sources {
 		if u, err := url.Parse(s.ListenURL); err == nil && u.Path == stream.Path {
-			return stationStatus{Title: strings.TrimSpace(s.Title), Bitrate: s.Bitrate}, nil
+			return stationStatus{Title: strings.TrimSpace(undoDoubleUTF8(s.Title)), Bitrate: s.Bitrate}, nil
 		}
 	}
 	return stationStatus{}, nil
+}
+
+// undoDoubleUTF8 repairs text encoded as UTF-8 twice, as Icecast's status
+// page gives the station's titles: it takes the UTF-8 title it's sent as
+// Latin-1, so "Günther" comes out "GÃ¼nther". If every character fits in a
+// byte, and those bytes are UTF-8 with characters of more than one byte, they
+// were the real text. (The stream's own titles are UTF-8 as they should be.)
+func undoDoubleUTF8(s string) string {
+	b := make([]byte, 0, len(s))
+	for _, r := range s {
+		if r > 0xFF {
+			return s // not Latin-1, so not double-encoded
+		}
+		b = append(b, byte(r))
+	}
+	if !utf8.Valid(b) || utf8.RuneCount(b) == len(b) {
+		return s // ASCII, or real Latin-1 ("Café"), which isn't valid UTF-8
+	}
+	return string(b)
 }

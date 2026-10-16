@@ -73,18 +73,28 @@ func TestWebOnAir(t *testing.T) {
 	app, srv := testApp(t)
 	station := fakeIcecast(t, strings.Replace(icecastStatus, "Yazoo City Calling with Zekkie", "Train To Skaville with brian tomsic", 1))
 	app.cfg.StreamURL, app.cfg.Destination = station.URL+"/wcbn-hd.mp3", t.TempDir()
-	app.cfg.ShowFile, app.cfg.TrackFiles = true, true
 	now := time.Now()
 	app.mu.Lock()
 	app.events[0].Start, app.events[0].End = now.Add(-10*time.Minute), now.Add(50*time.Minute) // Train To Skaville is on
 	app.mu.Unlock()
 
 	page := get(t, srv.URL+"/")
-	for _, want := range []string{`class="card live-card onair"`, "ON AIR", `<h2><a href="/shows#show-`, "with brian tomsic",
+	for _, want := range []string{`class="card live-card onair"`, ">LIVE<", `<h2><a href="/shows/`, "with brian tomsic",
 		"West Coast Blues", "Blind Blake", "Not recording · 320 kbps"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("On air card missing %q", want)
 		}
+	}
+	// The slot's start and end times (it's on today), at the top right beside
+	// the badge, with the title and DJ wrapping to their left.
+	start := now.Add(-10 * time.Minute).In(app.cfg.Location)
+	if want := fmt.Sprintf(`<span class="muted">with brian tomsic</span>
+    </div>
+    <div class="live-meta">
+      <span class="slot">%s</span>
+      <span class="badge">LIVE</span>
+    </div>`, timeRange(start, start.Add(time.Hour))); !strings.Contains(page, want) {
+		t.Errorf("On air card heading missing %q", want)
 	}
 	if strings.Contains(page, "Record this show") || strings.Contains(page, `class="toggle-form"`) {
 		t.Error("the On air card shouldn't have a Record button; shows are added on the Shows page")
@@ -124,8 +134,8 @@ func TestWebOnAir(t *testing.T) {
 			id = sh.ID
 		}
 	}
-	if want := fmt.Sprintf(`<h2><a href="/shows#show-%d">Train To Skaville</a></h2>`, id); !strings.Contains(page, want) {
-		t.Errorf("the On air card's title should link to the show on the Shows page: missing %s", want)
+	if want := fmt.Sprintf(`<h2><a href="/shows/%d">Train To Skaville</a></h2>`, id); !strings.Contains(page, want) {
+		t.Errorf("the On air card's title should link to the show's page: missing %s", want)
 	}
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err = client.PostForm(fmt.Sprintf("%s/shows/%d/record", srv.URL, id), url.Values{"record": {"1"}})
@@ -144,5 +154,19 @@ func TestWebOnAir(t *testing.T) {
 	}
 	if page := get(t, srv.URL+"/"); strings.Contains(page, `live-card onair"`) || !strings.Contains(page, `<span class="badge rec">`) {
 		t.Error("page should show the recording, not the On air card")
+	}
+}
+
+func TestUndoDoubleUTF8(t *testing.T) {
+	for in, want := range map[string]string{
+		"Philly-Nova by GÃ¼nther Fischer on Jazz Till Whenever with arthur": "Philly-Nova by Günther Fischer on Jazz Till Whenever with arthur",
+		"Pressure Drop by Toots & the Maytals":                              "Pressure Drop by Toots & the Maytals", // ASCII
+		"Café":                                                              "Café",                                 // real Latin-1 text
+		"Sigur Rós – Hoppípolla":                                            "Sigur Rós – Hoppípolla",               // already right (the dash isn't Latin-1)
+		"Ã":                                                                 "Ã",                                    // not valid UTF-8 as bytes
+	} {
+		if got := undoDoubleUTF8(in); got != want {
+			t.Errorf("undoDoubleUTF8(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

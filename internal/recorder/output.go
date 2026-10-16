@@ -9,9 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"unicode/utf8"
 
-	"wcbn-recorder/internal/config"
 	"wcbn-recorder/internal/id3"
 	"wcbn-recorder/internal/spinitron"
 )
@@ -19,29 +17,16 @@ import (
 // outputs are the paths one recording is written to.
 type outputs struct {
 	base     string // "<show> - YYYY-MM-DD", possibly with a time suffix
-	showFile string // the whole show; see outputPaths
-	trackDir string // <dir>/<base>/: one file per song plus a playlist
+	showFile string // the whole show: <dir>/<base>.mp3
 	part     string // the hidden file audio is recorded into, next to showFile
 }
 
-// outputPaths lays out a recording's files in the program folder dir. With
-// song files on, the whole show is only a backup, so it goes inside the song
-// folder as a hidden file (<dir>/<base>/.<base>.mp3), where music libraries
-// such as Plex skip it. Otherwise it's the main output: <dir>/<base>.mp3.
-// The in-progress recording sits beside it, hidden, as <same name>.part.
-func outputPaths(cfg *config.Config, dir, base string) outputs {
-	out := outputs{base: base, trackDir: filepath.Join(dir, base)}
-	if cfg.TrackFiles {
-		out.showFile = filepath.Join(out.trackDir, "."+base+".mp3")
-		out.part = out.showFile + ".part"
-	} else {
-		out.showFile = filepath.Join(dir, base+".mp3")
-		out.part = filepath.Join(dir, "."+base+".mp3.part")
-	}
-	return out
+// outputPaths lays out a recording's files in the program folder dir.
+func outputPaths(dir, base string) outputs {
+	return outputs{base: base, showFile: filepath.Join(dir, base+".mp3"), part: filepath.Join(dir, "."+base+".mp3.part")}
 }
 
-// showMeta is the show-level information shared by every output file.
+// showMeta is the show-level information for the show file and CUE sheet.
 type showMeta struct {
 	Title       string
 	Start, End  time.Time
@@ -105,26 +90,51 @@ func (m showMeta) date() string { return m.Start.Format("2006-01-02") }
 // albumTitle is used as the show file's title and each song's album.
 func (m showMeta) albumTitle() string { return fmt.Sprintf("%s (%s)", m.Title, m.date()) }
 
-// finalize writes the configured outputs from the raw audio in part, then
-// removes it. It returns an error only if no output could be written, in
-// which case the caller keeps the raw audio.
+// finalize writes the show file and CUE sheet from the raw audio in part,
+// then removes it. If the show file can't be written, it returns the error
+// and the caller keeps the raw audio.
 func (r *recording) finalize(ctx context.Context, part string, out outputs) error {
-	// Most songs are already saved; this writes the last one.
-	failed := r.finishSongs()
-	meta := r.showMetadata(ctx)
-	if r.cfg.ShowFile {
-		if err := r.writeShowFile(meta, part, out.showFile); err != nil {
-			return err
-		}
-	} else if failed > 0 {
-		// The song files are the only output, so keep the raw audio too.
-		return fmt.Errorf("%d song files couldn't be written", failed)
+	if err := r.writeShowFile(r.showMetadata(ctx), part, out.showFile); err != nil {
+		return err
 	}
 	return os.Remove(part)
 }
 
-// writeShowFile writes the whole show with an ID3 tag and a Chapter per song.
+// writeShowFile writes the whole show with an ID3 tag, and its CUE sheet. A
+// resumed recording adds its audio to the earlier run's show file, if it can
+// (see mergeShowFile), or else writes one of its own beside it.
 func (r *recording) writeShowFile(meta showMeta, part, path string) error {
+	segs := r.segments() // for the CUE sheet
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if r.resumed && exists(path) {
+		err := r.mergeShowFile(meta, part, path, segs)
+		if err == nil {
+			return nil
+		}
+		log.Printf("adding to %s failed (%v); writing this part of %q to a file of its own", path, err, meta.Title)
+	}
+	src, err := os.Open(part)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	path = uniquePath(path, ".mp3") // beside the earlier run's, if it couldn't be added to
+	if err := writeTagged(path, r.showTag(meta, r.audio.DurationMs()), src); err != nil {
+		return err
+	}
+	r.showOut = path
+	if err := r.writeCue(meta, path, segs); err != nil {
+		log.Printf("writing CUE sheet for %q: %v", meta.Title, err) // the show file itself is fine
+	} else if exists(cuePath(path)) {
+		r.cueOut = cuePath(path)
+	}
+	return nil
+}
+
+// showTag is the show file's ID3 tag, for audio lasting durationMs.
+func (r *recording) showTag(meta showMeta, durationMs int64) *id3.Tag {
 	var tag id3.Tag
 	tag.Text("TIT2", meta.albumTitle())
 	tag.Text("TPE1", meta.Artist)
@@ -133,7 +143,7 @@ func (r *recording) writeShowFile(meta showMeta, part, path string) error {
 	tag.Text("TDRC", meta.date())
 	tag.Text("TCON", meta.Genre)
 	tag.Text("TPUB", stationName)
-	tag.Text("TLEN", fmt.Sprint(r.audio.DurationMs()))
+	tag.Text("TLEN", fmt.Sprint(durationMs))
 	tag.Comment(meta.Comment)
 	tag.UserText("show", meta.Title)
 	tag.UserText("dj", meta.DJ)
@@ -146,43 +156,12 @@ func (r *recording) writeShowFile(meta showMeta, part, path string) error {
 	if meta.Art != nil {
 		tag.Picture(meta.Art.mime, meta.Art.data)
 	}
-
-	segs := r.segments()
-	var chs []id3.Chapter
-	for _, s := range segs {
-		chs = append(chs, id3.Chapter{StartMs: s.startMs, EndMs: s.endMs, Title: s.mark.title})
-	}
-	if len(chs) > id3.MaxChapters {
-		log.Printf("%q has %d tracks; only the first %d get chapters", meta.Title, len(chs), id3.MaxChapters)
-	}
-	tag.Chapters(chs)
-
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	src, err := os.Open(part)
-	if err != nil {
-		return err
-	}
-	defer src.Close()
-	path = uniquePath(path, ".mp3") // a resumed recording adds a second one
-	if err := writeTagged(path, &tag, src); err != nil {
-		return err
-	}
-	r.showOut = path
-	if err := r.writeCue(meta, path, segs); err != nil {
-		log.Printf("writing CUE sheet for %q: %v", meta.Title, err) // the show file itself is fine
-	} else if exists(cuePath(path)) {
-		r.cueOut = cuePath(path)
-	}
-	return nil
+	return &tag
 }
 
 // segment is the stretch of audio between one stream title change and the next.
 type segment struct {
-	n                int // song number, for song files
 	mark             trackMark
-	leadOff          int64 // where a gapless file starts, OverlapFrames before startOff
 	startOff, endOff int64
 	startMs, endMs   int64
 }
@@ -195,7 +174,7 @@ func (r *recording) segments() []segment {
 	}
 	var segs []segment
 	for i, m := range marks {
-		s := segment{mark: m, leadOff: m.lead, startOff: m.offset, startMs: m.ms, endOff: r.audio.Written(), endMs: r.audio.DurationMs()}
+		s := segment{mark: m, startOff: m.offset, startMs: m.ms, endOff: r.audio.Written(), endMs: r.audio.DurationMs()}
 		if i+1 < len(marks) {
 			s.endOff, s.endMs = marks[i+1].offset, marks[i+1].ms
 		}
@@ -236,17 +215,4 @@ func splitSong(s string) (title, artist string) {
 		return strings.TrimSpace(s[:i]), strings.TrimSpace(s[i+4:])
 	}
 	return strings.TrimSpace(s), ""
-}
-
-// truncateName shortens s to at most n bytes without splitting a character,
-// keeping file names well under filesystem limits.
-func truncateName(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	s = s[:n]
-	for !utf8.ValidString(s) {
-		s = s[:len(s)-1]
-	}
-	return strings.TrimSpace(s)
 }

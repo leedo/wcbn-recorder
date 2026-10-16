@@ -52,13 +52,23 @@ var calendarConfigRe = regexp.MustCompile(`\.calendar\((\{.*?\})\);`)
 // FetchSchedule loads the HTML calendar page, finds the event source the
 // calendar uses, and requests the events between from and to.
 func FetchSchedule(ctx context.Context, scheduleURL string, loc *time.Location, from, to time.Time) ([]Event, error) {
-	page, err := httpx.Get(ctx, scheduleURL)
+	data, feed, err := fetchFeed(ctx, scheduleURL, loc, from, to)
 	if err != nil {
 		return nil, err
 	}
+	return parseCalendarFeed(data, feed)
+}
+
+// fetchFeed requests the calendar's events between from and to, returning
+// the feed's JSON and URL.
+func fetchFeed(ctx context.Context, scheduleURL string, loc *time.Location, from, to time.Time) ([]byte, *url.URL, error) {
+	page, err := httpx.Get(ctx, scheduleURL)
+	if err != nil {
+		return nil, nil, err
+	}
 	feed, err := calendarFeedURL(scheduleURL, page)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	q := feed.Query()
 	q.Set("start", from.In(loc).Format("2006-01-02"))
@@ -68,9 +78,9 @@ func FetchSchedule(ctx context.Context, scheduleURL string, loc *time.Location, 
 
 	data, err := httpx.Get(ctx, feed.String())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return parseCalendarFeed(data, feed)
+	return data, feed, nil
 }
 
 func calendarFeedURL(pageURL string, page []byte) (*url.URL, error) {
@@ -91,19 +101,22 @@ func calendarFeedURL(pageURL string, page []byte) (*url.URL, error) {
 	return base.Parse(conf.Events)
 }
 
+// feedEntry is one event in the calendar feed.
+type feedEntry struct {
+	ID        int    `json:"id"`
+	Title     string `json:"title"`
+	Text      string `json:"text"`
+	Start     string `json:"start"`
+	End       string `json:"end"`
+	URL       string `json:"url"`
+	ClassName string `json:"className"`
+	Data      struct {
+		Category string `json:"category"`
+	} `json:"data"`
+}
+
 func parseCalendarFeed(data []byte, base *url.URL) ([]Event, error) {
-	var raw []struct {
-		ID        int    `json:"id"`
-		Title     string `json:"title"`
-		Text      string `json:"text"`
-		Start     string `json:"start"`
-		End       string `json:"end"`
-		URL       string `json:"url"`
-		ClassName string `json:"className"`
-		Data      struct {
-			Category string `json:"category"`
-		} `json:"data"`
-	}
+	var raw []feedEntry
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parsing calendar feed: %w", err)
 	}
